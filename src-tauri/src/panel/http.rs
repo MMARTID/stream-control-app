@@ -141,7 +141,14 @@ fn host_allowed(headers: &HeaderMap, own_host: Option<&str>) -> bool {
     if name.parse::<IpAddr>().is_ok() || name == "localhost" {
         return true;
     }
-    own_host.is_some_and(|own| name == own || name == format!("{own}.local"))
+    if own_host.is_some_and(|own| name == own || name == format!("{own}.local")) {
+        return true;
+    }
+    // Nombres que solo existen dentro de una red local: sin puntos (el nombre del PC tal como lo ve el router)
+    // o con el sufijo de una red doméstica. Un dominio público (`ejemplo.com`) sigue rechazado: es lo que
+    // usaría un ataque de «DNS rebinding».
+    const LOCAL_SUFFIXES: [&str; 8] = [".local", ".lan", ".home", ".home.arpa", ".localdomain", ".internal", ".fritz.box", ".router"];
+    !name.is_empty() && (!name.contains('.') || LOCAL_SUFFIXES.iter().any(|s| name.ends_with(s)))
 }
 
 /// Si el navegador manda `Origin`, debe ser la misma página que sirve este servidor.
@@ -168,6 +175,10 @@ async fn guard(
     let is_api = req.uri().path().starts_with("/api/");
     let mut res = next.run(req).await;
     let h = res.headers_mut();
+    // Sin `charset` algunos navegadores muestran mal las tildes de los mensajes de error.
+    if h.get(header::CONTENT_TYPE).is_some_and(|v| v == "application/json") {
+        h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"));
+    }
     h.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
@@ -542,7 +553,11 @@ mod tests {
         for ok in ["192.168.1.20:8443", "localhost:8443", "[::1]:8443", "mi-pc:8443", "MI-PC.local", "10.0.0.2"] {
             assert!(host_allowed(&headers(ok), own), "{ok}");
         }
-        for bad in ["evil.example.com", "evil.example.com:8443", "mi-pc.evil.com"] {
+        // El nombre del PC en la red local, aunque no coincida con el del sistema, o con sufijo de red doméstica.
+        for ok in ["desktop-abc123:8443", "otro-nombre", "miguel-pc.lan", "pc.home.arpa:8443"] {
+            assert!(host_allowed(&headers(ok), own), "{ok}");
+        }
+        for bad in ["evil.example.com", "evil.example.com:8443", "mi-pc.evil.com", "pc.lan.evil.com", "lan.com"] {
             assert!(!host_allowed(&headers(bad), own), "{bad}");
         }
         assert!(!host_allowed(&HeaderMap::new(), own));
