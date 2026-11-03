@@ -38,13 +38,13 @@ App de escritorio **local** que acompaña a **OBS** durante los directos. OBS si
 - Sin modo estudio: la escena cambia en directo con la transición por defecto de OBS.
 - Al encender el ordenador se abren OBS y la app, y la app conecta sola con OBS.
 - Solo una cámara emite a la vez. La **webcam sustituye al móvil**: no van juntas en el directo, aunque ambas puedan estar conectadas. Cualquier cámara que OBS reconozca sirve como fuente.
-- El móvil es **Android** (11 o superior) y usa **OpenCam** ([DerpcatMusic/OpenCam](https://github.com/DerpcatMusic/OpenCam), licencia MIT), que ya funciona bien para el usuario.
+- El usuario principal usa un **Samsung Android** (11 o superior) como móvil de la cámara y como control del directo. Ese móvil usa **OpenCam** ([DerpcatMusic/OpenCam](https://github.com/DerpcatMusic/OpenCam), licencia MIT), que ya funciona bien en él. Ningún iPhone participa en el directo.
 - OpenCam se conecta por **USB**, con la depuración USB activada en el móvil. El cable también puede cargar el móvil mientras emite; hay que medir si eso añade calor.
 - La cámara virtual de OpenCam en Windows necesita el driver de terceros [Unity Capture](https://github.com/schellingb/UnityCapture).
 - El chat es de Twitch y YouTube, y se lee en solo lectura desde el primer día.
 - No se usa ningún mando físico (p. ej. Stream Deck); el control es con ratón, teclado y el móvil.
-- Un solo usuario, tú, usa el móvil y el ordenador.
-- Hay un **panel web en la red local** (v1), servido por la app de escritorio, al que se accede desde el móvil y el ordenador conectados a la misma Wi‑Fi. No hay servicios en la nube ni cuentas externas. El PC debe estar encendido con OBS abierto para que el panel pueda actuar.
+- El usuario principal controla el directo desde el PC y desde su Samsung.
+- Hay un **panel web en la red local** (v1), servido por la app de escritorio, al que se accede desde el ordenador y desde el Samsung, siempre conectados a la misma Wi‑Fi. No hay servicios en la nube ni cuentas externas. El PC debe estar encendido con OBS abierto para que el panel pueda actuar.
 
 ## 4. Escenario de uso
 
@@ -123,6 +123,7 @@ App de escritorio **local** que acompaña a **OBS** durante los directos. OBS si
 - **RF-47** Registro de acciones: cuándo, desde qué dispositivo y qué escena o acción. Visible en el escritorio.
 - **RF-48** Conexión cifrada (HTTPS) con certificado local. El navegador avisará la primera vez en cada dispositivo.
 - **RF-49** Ajuste en la app para desactivar el inicio y la parada del stream desde el panel. Desactivado, el panel no puede iniciarlo ni pararlo.
+- **RF-50** Vista del panel pensada para el móvil en vertical: escenas rápidas y acciones arriba, chat debajo y botones grandes.
 
 ## 6. Requisitos no funcionales
 
@@ -157,6 +158,8 @@ App de escritorio **local** que acompaña a **OBS** durante los directos. OBS si
 - [ ] Con el control de stream desactivado en la app, el panel no puede iniciar ni parar el directo.
 - [ ] Un dispositivo revocado deja de poder enviar comandos al instante.
 - [ ] Cada acción aparece en el registro con fecha, dispositivo y escena.
+- [ ] Desde el Samsung se leen el chat y las escenas rápidas, y se lanzan con un toque.
+- [ ] Con OpenCam y el panel web en pantalla dividida en el mismo Samsung, el vídeo no se corta durante una hora de directo.
 
 ## 8. Arquitectura propuesta
 
@@ -230,6 +233,7 @@ Los nombres exactos de peticiones y eventos se comprueban contra la documentaci�
 | Iniciar o parar el directo por error desde el móvil | Confirmación en dos pasos (RF-46), registro (RF-47) y opción para desactivarlo (RF-49). |
 | El panel depende del PC encendido y de la misma Wi‑Fi | Estado real en el panel (RF-42); los comandos no se guardan para más tarde. |
 | Aviso de certificado en el navegador del móvil | Certificado local que se acepta una vez por dispositivo (RF-48). |
+| El mismo Samsung hace de cámara y de panel: si OpenCam pasa a segundo plano al usar el navegador, la cámara se corta | Probar la pantalla dividida con OpenCam y el panel antes del directo (criterio 7.2). Si falla, el control queda solo en el PC. |
 | Desconexión del cable USB durante el directo | Aviso inmediato (RF-7); reconexión automática de OpenCam; usar un cable de datos de buena calidad. |
 | Corte de imagen al cambiar de móvil a webcam en directo | Transición preparada en OBS; probar el cambio antes del directo. |
 | Calor del móvil: USB también carga el móvil y OpenCam necesita la app abierta (sin streaming en segundo plano) | Medir la temperatura con y sin carga; ajustar resolución y fps; documentar la recomendación. |
@@ -241,7 +245,7 @@ Los nombres exactos de peticiones y eventos se comprueban contra la documentaci�
 
 ## 12. Preguntas abiertas
 
-Ninguna por ahora. Las decisiones tomadas están repartidas en las secciones 3, 5 y 8.
+Ninguna por ahora. La prueba de pantalla dividida (criterio 7.2) decide si el Samsung también puede ser el control del directo sin cortar la cámara.
 
 ## 13. Estructura propuesta (cuando empiece el código)
 
