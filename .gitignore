@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Motor de MediaPipe: se copia desde node_modules (scripts/copy-mediapipe.mjs)
+public/mediapipe/wasm

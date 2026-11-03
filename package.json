@@ -1,15 +1,19 @@
 {
   "name": "stream-control",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "node --test src/avatar/mapping.test.ts",
+    "predev": "node scripts/copy-mediapipe.mjs",
+    "prebuild": "node scripts/copy-mediapipe.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.2",
     "@tauri-apps/api": "^2"
   },
   "devDependencies": {
