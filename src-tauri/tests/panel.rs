@@ -44,6 +44,7 @@ fn settings(obs_port: u16, panel: PanelSettings) -> Settings {
     Settings {
         obs: ObsSettings { host: "127.0.0.1".into(), port: obs_port },
         panel,
+        avatar: Default::default(),
         mic_input: Some("Micro".into()),
         quick_scenes: vec![QuickScene { scene: "Pausa / baño".into(), label: "Pausa".into(), mute_mic: true, ..Default::default() }],
         cameras: vec![

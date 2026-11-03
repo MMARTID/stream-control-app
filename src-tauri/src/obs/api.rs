@@ -144,6 +144,30 @@ impl ObsClient {
         Ok(())
     }
 
+    /// Crea una entrada (p. ej. una fuente de navegador) en una escena. Devuelve el id del elemento de escena.
+    pub async fn create_input(
+        &self,
+        scene: &str,
+        input_name: &str,
+        input_kind: &str,
+        settings: Value,
+    ) -> Result<i64, ObsError> {
+        let v = data(
+            self.request(
+                "CreateInput",
+                Some(json!({
+                    "sceneName": scene,
+                    "inputName": input_name,
+                    "inputKind": input_kind,
+                    "inputSettings": settings,
+                    "sceneItemEnabled": true,
+                })),
+            )
+            .await?,
+        )?;
+        v.get("sceneItemId").and_then(Value::as_i64).ok_or_else(|| ObsError::Protocol("falta `sceneItemId`".into()))
+    }
+
     pub async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         let v = data(self.request("GetStreamStatus", None).await?)?;
         let num = |key: &str| v.get(key).and_then(Value::as_u64).unwrap_or(0);

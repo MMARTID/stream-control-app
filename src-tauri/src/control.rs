@@ -7,7 +7,7 @@
 use std::{collections::HashSet, sync::Arc, sync::Mutex, time::Duration};
 
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::{
     sync::{broadcast, watch},
     time::{Instant, interval},
@@ -17,7 +17,7 @@ use crate::{
     obs::{ConnectionInfo, ConnectionState, ObsClient, ObsConfig, ObsError, protocol::ObsEvent},
     preview::{Interest, PreviewHub},
     settings::{
-        Settings, SettingsStore,
+        AVATAR_CHARACTERS, Settings, SettingsStore,
         secrets::{OBS_PASSWORD_KEY, SecretStore},
     },
 };
@@ -113,6 +113,9 @@ pub struct Control {
     snapshot_tx: watch::Sender<Snapshot>,
     preview: Arc<PreviewHub>,
 }
+
+/// Nombre de la fuente de navegador que crea la app en OBS.
+pub const AVATAR_SOURCE_NAME: &str = "Avatar (Stream Control)";
 
 fn msg(e: ObsError) -> String {
     e.to_string()
@@ -490,6 +493,26 @@ impl Control {
         Ok(inputs.into_iter().map(|i| InputView { name: i.name, kind: i.kind }).collect())
     }
 
+    /// Añade el avatar a la escena en programa como fuente de navegador de OBS.
+    /// Solo se hace cuando el usuario pulsa el botón, nunca por su cuenta.
+    pub async fn create_avatar_source(&self) -> Result<String, String> {
+        let scene = self.current_scene().ok_or("No hay escena en programa")?;
+        let port = self.settings().avatar.port;
+        let url = format!("http://127.0.0.1:{port}/avatar");
+        match self
+            .obs
+            .create_input(&scene, AVATAR_SOURCE_NAME, "browser_source", json!({ "url": url, "width": 800, "height": 800, "fps": 30 }))
+            .await
+        {
+            Ok(_) => Ok(scene),
+            // 601 = ResourceAlreadyExists
+            Err(ObsError::Request { code: 601, .. }) => {
+                Err(format!("Ya existe en OBS algo llamado «{AVATAR_SOURCE_NAME}». Añádelo a esta escena a mano o bórralo y vuelve a intentarlo"))
+            }
+            Err(e) => Err(msg(e)),
+        }
+    }
+
     // ---- Ajustes ----
 
     pub async fn save_settings(&self, mut new: Settings) -> Result<(), String> {
@@ -543,6 +566,17 @@ fn validate(settings: &mut Settings) -> Result<(), String> {
     }
     if settings.panel.enabled && settings.panel.port == settings.obs.port {
         return Err("El panel web y OBS no pueden usar el mismo puerto".into());
+    }
+    if settings.avatar.port != 0 && settings.avatar.port < 1024 {
+        return Err("El puerto del avatar debe ser 1024 o mayor".into());
+    }
+    if settings.avatar.enabled
+        && (settings.avatar.port == settings.obs.port || (settings.panel.enabled && settings.avatar.port == settings.panel.port))
+    {
+        return Err("El avatar necesita un puerto distinto al de OBS y al del panel web".into());
+    }
+    if !AVATAR_CHARACTERS.contains(&settings.avatar.character.as_str()) {
+        return Err("Ese personaje de avatar no existe".into());
     }
     let mut scenes = HashSet::new();
     for q in &mut settings.quick_scenes {

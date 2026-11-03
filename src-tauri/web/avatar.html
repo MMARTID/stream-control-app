@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avatar · Stream Control</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      /* Con ?preview se pinta un fondo de ajedrez para ver la transparencia. En OBS no hay fondo. */
+      body.preview {
+        background: conic-gradient(#2a2e38 25%, #20242d 0 50%, #2a2e38 0 75%, #20242d 0) 0 0 / 28px 28px;
+      }
+      #stage { position: absolute; inset: 0; }
+      #stage svg { width: 100%; height: 100%; display: block; }
+      #note { position: absolute; left: 8px; bottom: 6px; font: 12px system-ui, sans-serif; color: #8b93a3; }
+      #note[hidden] { display: none; }
+    </style>
+    <script type="module" src="/avatar.js"></script>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="note" hidden></div>
+  </body>
+</html>

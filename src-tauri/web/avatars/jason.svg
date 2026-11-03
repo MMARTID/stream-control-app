@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 440" role="img" aria-label="Avatar Jason">
+  <!--
+    Personaje de Stream Control. Convenciones para sustituirlo por otro dibujo (lienzo 400×440):
+    #avatar-body (balanceo), #avatar-head (giro/inclinación, eje en 200,300), #avatar-face (rasgos),
+    #eye-l/#eye-r (parpadeo, con data-cx/data-cy), #pupil-l/#pupil-r, #brow-l/#brow-r, y la boca
+    (centro 200,250): #mouth-lips (opcional), #mouth-cavity, #mouth-clip-path, #mouth-line,
+    #mouth-teeth, #mouth-tongue.
+    Dibujo propio en estilo de caricatura realista, inspirado en el aspecto de personajes de GTA VI.
+    No es arte oficial de Rockstar Games ni de Take-Two.
+  -->
+  <defs>
+    <clipPath id="mouth-clip"><path id="mouth-clip-path" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z"/></clipPath>
+    <clipPath id="face-clip"><path d="M 116 160 C 116 92, 152 64, 200 64 C 248 64, 284 92, 284 160 C 284 214, 270 252, 250 274 C 236 290, 216 298, 200 298 C 184 298, 164 290, 150 274 C 130 252, 116 214, 116 160 Z"/></clipPath>
+    <radialGradient id="skin" cx="50%" cy="36%" r="72%"><stop offset="0" stop-color="#e2ad80"/><stop offset=".55" stop-color="#c98f62"/><stop offset="1" stop-color="#9c653f"/></radialGradient>
+    <pattern id="stubble" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1.8" cy="1.8" r="1.15" fill="#1c1411" opacity=".75"/><circle cx="5.3" cy="5.2" r="1.05" fill="#1c1411" opacity=".65"/></pattern>
+    <pattern id="print" width="52" height="52" patternUnits="userSpaceOnUse">
+      <rect width="52" height="52" fill="#14565f"/>
+      <circle cx="13" cy="13" r="6" fill="#f07b9a"/><circle cx="13" cy="13" r="2" fill="#ffd36b"/>
+      <ellipse cx="38" cy="32" rx="10" ry="3.6" fill="#79c7a0" transform="rotate(-32 38 32)"/>
+      <ellipse cx="20" cy="42" rx="8" ry="3" fill="#2f9a86" transform="rotate(24 20 42)"/>
+      <circle cx="40" cy="9" r="3.4" fill="#f07b9a" opacity=".85"/>
+    </pattern>
+  </defs>
+  <g id="avatar-body">
+    <path d="M 18 440 C 20 366, 96 318, 200 318 C 304 318, 380 366, 382 440 Z" fill="#c98f62" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M 148 322 Q 200 376 252 322 L 254 440 L 146 440 Z" fill="#efece4" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M 168 330 Q 200 364 232 330" fill="none" stroke="#c4bfb2" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 18 440 C 20 376, 78 330, 148 322 L 174 356 L 150 440 Z" fill="url(#print)" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M 382 440 C 380 376, 322 330, 252 322 L 226 356 L 250 440 Z" fill="url(#print)" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M 148 322 L 178 344 L 172 372 L 152 346 Z M 252 322 L 222 344 L 228 372 L 248 346 Z" fill="#1c6f78" stroke="#1a0f0a" stroke-width="3" stroke-linejoin="round"/>
+    <g id="avatar-head" transform="rotate(0 200 300)">
+      <path d="M 154 266 L 144 328 Q 200 360 256 328 L 246 266 Z" fill="#9c653f" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M 156 300 Q 176 318 196 314 M 244 300 Q 224 318 204 314" fill="none" stroke="#7d4e30" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+      <ellipse cx="114" cy="192" rx="12" ry="22" fill="#c98f62" stroke="#1a0f0a" stroke-width="3.5"/>
+      <ellipse cx="286" cy="192" rx="12" ry="22" fill="#c98f62" stroke="#1a0f0a" stroke-width="3.5"/>
+      <path id="face-shape" d="M 116 160 C 116 92, 152 64, 200 64 C 248 64, 284 92, 284 160 C 284 214, 270 252, 250 274 C 236 290, 216 298, 200 298 C 184 298, 164 290, 150 274 C 130 252, 116 214, 116 160 Z" fill="url(#skin)" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+      <g id="avatar-face">
+        <path d="M 120 168 C 122 232, 144 274, 190 296 C 150 270, 134 230, 130 168 Z" fill="#9c653f" opacity=".45"/>
+        <path d="M 280 168 C 278 232, 256 274, 210 296 C 250 270, 266 230, 270 168 Z" fill="#9c653f" opacity=".3"/>
+        <path d="M 128 206 Q 148 230 176 226 M 272 206 Q 252 230 224 226" fill="none" stroke="#9c653f" stroke-width="6" stroke-linecap="round" opacity=".35"/>
+        <ellipse cx="146" cy="216" rx="18" ry="9" fill="#d97a5c" opacity=".22"/>
+        <ellipse cx="254" cy="216" rx="18" ry="9" fill="#d97a5c" opacity=".22"/>
+        <g id="eye-l" data-cx="150" data-cy="177" transform="translate(150 177)">
+          <ellipse rx="18" ry="12.5" fill="#f3efe8" stroke="#1a0f0a" stroke-width="3"/>
+          <g id="pupil-l">
+            <circle cx="0" cy="-0.5" r="11.0" fill="#4a3022"/>
+            <circle cx="0" cy="-0.5" r="7.0" fill="#0e0807"/>
+            <circle cx="-3" cy="-3.6" r="2.4" fill="#ffffff"/>
+          </g>
+          <path d="M -20 -1 Q 0 -26.25 20 -1" fill="none" stroke="#1a0f0a" stroke-width="4.2" stroke-linecap="round"/>
+        </g>
+        <g id="eye-r" data-cx="250" data-cy="177" transform="translate(250 177)">
+          <ellipse rx="18" ry="12.5" fill="#f3efe8" stroke="#1a0f0a" stroke-width="3"/>
+          <g id="pupil-r">
+            <circle cx="0" cy="-0.5" r="11.0" fill="#4a3022"/>
+            <circle cx="0" cy="-0.5" r="7.0" fill="#0e0807"/>
+            <circle cx="-3" cy="-3.6" r="2.4" fill="#ffffff"/>
+          </g>
+          <path d="M -20 -1 Q 0 -26.25 20 -1" fill="none" stroke="#1a0f0a" stroke-width="4.2" stroke-linecap="round"/>
+        </g>
+        <path d="M 130 190 Q 150 198 170 190 M 230 190 Q 250 198 270 190" fill="none" stroke="#9c653f" stroke-width="3" stroke-linecap="round" opacity=".5"/>
+        <path id="brow-l" d="M 122 152 Q 148 134 186 144 L 184 153 Q 152 146 128 162 Z" fill="#1c1411" stroke="#1c1411" stroke-width="3" stroke-linejoin="round"/>
+        <path id="brow-r" d="M 278 152 Q 252 134 214 144 L 216 153 Q 248 146 272 162 Z" fill="#1c1411" stroke="#1c1411" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M 197 170 Q 193 198 187 214" fill="none" stroke="#9c653f" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 181 218 Q 200 232 219 218" fill="none" stroke="#1a0f0a" stroke-width="3.5" stroke-linecap="round" opacity=".85"/>
+        <ellipse cx="190" cy="221" rx="5" ry="3" fill="#2a130c" opacity=".55"/><ellipse cx="210" cy="221" rx="5" ry="3" fill="#2a130c" opacity=".55"/>
+        <ellipse cx="203" cy="209" rx="5" ry="3" fill="#e2ad80" opacity=".55"/>
+        <g clip-path="url(#face-clip)">
+          <path d="M 114 174 C 112 242, 150 300, 200 302 C 250 300, 288 242, 286 174 C 276 198, 262 214, 240 222 L 160 222 C 138 214, 124 198, 114 174 Z" fill="url(#stubble)"/>
+          <path d="M 128 212 C 134 262, 164 294, 200 296 C 236 294, 266 262, 272 212 C 262 230, 244 240, 226 242 L 174 242 C 156 240, 138 230, 128 212 Z" fill="#1c1411" opacity=".55"/>
+          <path d="M 166 238 Q 184 226 200 233 Q 216 226 234 238 Q 218 245 200 242 Q 182 245 166 238 Z" fill="#1c1411" opacity=".9"/>
+        </g>
+        <g id="mouth">
+          <path id="mouth-lips" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="none" stroke="#a9594f" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+          <path id="mouth-cavity" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="#4a121a" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+          <g clip-path="url(#mouth-clip)">
+            <rect id="mouth-teeth" x="168" y="242" width="64" height="0" fill="#f6f1e6"/>
+            <ellipse id="mouth-tongue" cx="200" cy="262" rx="16" ry="0" fill="#d4566e"/>
+          </g>
+          <path id="mouth-line" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="none" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+        </g>
+      </g>
+      <path d="M 112 156 C 102 82, 150 48, 200 48 C 250 48, 298 82, 288 156 C 286 124, 272 102, 254 94 C 226 84, 174 84, 146 94 C 128 102, 114 124, 112 156 Z" fill="#1c1411" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M 112 150 C 111 172, 113 188, 120 204 C 125 190, 127 172, 128 152 Z M 288 150 C 289 172, 287 188, 280 204 C 275 190, 273 172, 272 152 Z" fill="#1c1411" opacity=".7"/>
+      <path d="M 140 78 Q 176 60 214 66 M 150 92 Q 190 78 236 86 M 128 100 Q 150 86 176 88" fill="none" stroke="#4b3a33" stroke-width="4.5" stroke-linecap="round" opacity=".7"/>
+    </g>
+  </g>
+</svg>

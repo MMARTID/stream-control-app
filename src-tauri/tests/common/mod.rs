@@ -285,6 +285,20 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
                 vec![],
             )
         }
+        "CreateInput" => {
+            let scene = data["sceneName"].as_str().unwrap_or_default().to_owned();
+            let name = data["inputName"].as_str().unwrap_or_default().to_owned();
+            if s.items.values().flatten().any(|i| i.source == name) {
+                return (Err((601, "Ya existe un recurso con ese nombre".into())), vec![]);
+            }
+            let Some(items) = s.items.get_mut(&scene) else { return (not_found("la escena"), vec![]) };
+            let id = items.iter().map(|i| i.id).max().unwrap_or(0) + 1;
+            items.push(Item { id, source: name, enabled: true, kind: "browser_source" });
+            (
+                Ok(Some(json!({ "inputUuid": "uuid-nuevo", "sceneItemId": id }))),
+                vec![event("SceneItemCreated", json!({ "sceneName": scene, "sceneUuid": "x", "sceneItemId": id }))],
+            )
+        }
         "GetStats" => (
             Ok(Some(json!({
                 "cpuUsage": 7.25, "memoryUsage": 480.0, "availableDiskSpace": 100000.0, "activeFps": 59.94,

@@ -75,11 +75,31 @@ impl Default for PanelSettings {
     }
 }
 
+/// Personajes disponibles para el avatar (los archivos están en `src-tauri/web/avatars/`).
+pub const AVATAR_CHARACTERS: [&str; 2] = ["jason", "cal"];
+
+/// Avatar animado con la boca (y la cara) del streamer. Se muestra en OBS como fuente de navegador.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AvatarSettings {
+    pub enabled: bool,
+    /// Puerto del servidor local (solo 127.0.0.1) que usa la fuente de navegador de OBS.
+    pub port: u16,
+    pub character: String,
+}
+
+impl Default for AvatarSettings {
+    fn default() -> Self {
+        Self { enabled: false, port: 4488, character: AVATAR_CHARACTERS[0].into() }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub obs: ObsSettings,
     pub panel: PanelSettings,
+    pub avatar: AvatarSettings,
     /// Entrada de audio de OBS que se silencia con el botón del micro.
     pub mic_input: Option<String>,
     pub quick_scenes: Vec<QuickScene>,

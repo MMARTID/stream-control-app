@@ -1,5 +1,6 @@
 //! Stream Control: control en directo para OBS.
 
+pub mod avatar;
 pub mod control;
 pub mod obs;
 pub mod panel;

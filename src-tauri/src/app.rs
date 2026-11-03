@@ -6,6 +6,7 @@ use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
 use crate::{
+    avatar::{Avatar, AvatarFrame, AvatarStatus},
     control::{Control, InputView, Snapshot},
     panel::{Panel, PanelStatus},
     preview::Interest,
@@ -82,6 +83,23 @@ async fn save_settings(control: Ctl<'_>, settings: Settings) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn get_avatar_status(avatar: State<'_, Arc<Avatar>>) -> AvatarStatus {
+    avatar.status()
+}
+
+/// Fotograma de seguimiento de la ventana (cara o voz) hacia el avatar. Se llama hasta ~30 veces por segundo.
+#[tauri::command]
+fn avatar_push(avatar: State<'_, Arc<Avatar>>, frame: AvatarFrame) {
+    avatar.push(frame);
+}
+
+/// Añade el avatar a la escena en programa como fuente de navegador de OBS.
+#[tauri::command]
+async fn create_avatar_source(control: Ctl<'_>) -> Result<String, String> {
+    control.create_avatar_source().await
+}
+
+#[tauri::command]
 fn get_panel_status(panel: State<'_, Arc<Panel>>) -> PanelStatus {
     panel.status()
 }
@@ -114,6 +132,16 @@ pub fn run() {
             let control = tauri::async_runtime::block_on(async { Control::start(store, secrets.clone()) });
             let panel = tauri::async_runtime::block_on(async {
                 Panel::start(Arc::clone(&control), dir.clone(), secrets.clone())
+            });
+
+            let avatar = tauri::async_runtime::block_on(async { Avatar::start(Arc::clone(&control)) });
+            let mut avatar_rx = avatar.subscribe();
+            let avatar_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while avatar_rx.changed().await.is_ok() {
+                    let status = avatar_rx.borrow_and_update().clone();
+                    let _ = avatar_handle.emit("avatar", status);
+                }
             });
 
             let mut panel_rx = panel.subscribe();
@@ -151,6 +179,7 @@ pub fn run() {
 
             app.manage(control);
             app.manage(panel);
+            app.manage(avatar);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -166,6 +195,9 @@ pub fn run() {
             set_source_enabled,
             save_settings,
             set_obs_password,
+            get_avatar_status,
+            avatar_push,
+            create_avatar_source,
             get_panel_status,
             set_panel_password,
             revoke_device,
