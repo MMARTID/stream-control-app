@@ -9,6 +9,7 @@
 - **Capturas** (`src-tauri/src/preview.rs`): `GetSourceScreenshot` de la salida y de cada fuente, de una en una (~3 y 1 por segundo), solo mientras alguien mira. No es vídeo.
 - **Panel web de red local** (`src-tauri/src/panel/`, `src-tauri/web/`): HTTPS, contraseña + código por dispositivo, comandos, registro y revocación. Ver `docs/panel-web.md`.
 - **Avatar animado** (`src-tauri/src/avatar.rs`, `src-tauri/web/avatar*`, `src/avatar/`): dos personajes, seguimiento de cara (MediaPipe en local) o de voz, y una **escena «Avatar»** que la app crea en OBS (avatar abajo a la izquierda en lugar de la cámara, con las demás fuentes copiadas) y que activa el seguimiento solo mientras está en pantalla. Ver `docs/avatar.md`.
+- **Luces** (`src-tauri/src/lights/`, pestaña Luces): busca, conecta y controla tiras LED Bluetooth de la app Lotus Lamp X. Ver `docs/luces.md`. **Sin probar con una tira real.**
 - **Interfaz de escritorio** (`src/`, TypeScript sin framework): cuatro pestañas (Directo, Avatar, Móvil, Ajustes), «Primeros pasos», ayuda cuando OBS no conecta y estados vacíos con botones. `npm run dev` en un navegador usa un OBS simulado (`src/mock.ts`: `?mock=empty`, `?mock=offline`, `?pairing`).
 - **Ajustes** (`src-tauri/src/settings/`): JSON local; contraseñas y la clave del certificado en el almacén seguro del sistema.
 
@@ -16,7 +17,7 @@ Peticiones de obs-websocket usadas: `GetVersion`, `GetSceneList`, `SetCurrentPro
 
 ## Cómo se ha probado
 
-- `cargo test` en `src-tauri/`: 69 pruebas contra un **OBS simulado** (`src-tauri/tests/common/mod.rs`): cliente, núcleo, capturas y salud, panel web (incluido un servidor HTTPS real) y avatar. `npm test`: 23 pruebas (conversiones del seguimiento y cuándo seguir según la escena).
+- `cargo test` en `src-tauri/`: 85 pruebas contra un **OBS simulado** y una tira simulada (`src-tauri/tests/common/mod.rs`): cliente, núcleo, capturas y salud, panel web (incluido un servidor HTTPS real) y avatar. `npm test`: 23 pruebas (conversiones del seguimiento y cuándo seguir según la escena).
 - **En Windows (GitHub Actions, `windows-latest`)**: las 22 pruebas de la primera versión pasaron, **la prueba del almacén seguro real de Windows (Credential Manager) pasó**, y la compilación generó el `.exe` portable y el instalador NSIS. Es un servidor de GitHub, no el PC de tu equipo. Las pruebas de las versiones nuevas (panel, avatar) aún no se han ejecutado allí.
 - La app completa se lanzó en macOS contra el OBS simulado y envió órdenes reales.
 - La interfaz de escritorio, el panel del móvil y el avatar se vieron en un navegador (el de escritorio y el avatar con el OBS/núcleo simulados; el panel del móvil con tamaño de móvil).
@@ -30,6 +31,7 @@ Peticiones de obs-websocket usadas: `GetVersion`, `GetSceneList`, `SetCurrentPro
 4. **Panel web en un móvil real**: HTTPS con certificado autofirmado, WebSocket seguro (Safari en iPhone es el más dudoso) y el Firewall de Windows. Ver `docs/panel-web.md`.
 5. **Avatar con una cara y una cámara reales, permisos de WebView2, seguimiento con la ventana minimizada, consumo de CPU, y la creación de la escena «Avatar» en OBS real** (posición y escala de la fuente, orden de las fuentes copiadas). Ver `docs/avatar.md`.
 6. **El parecido de Jason y Cal con los personajes del juego.** Salen de descripciones, no de imágenes.
+7. **Las tiras LED con Bluetooth real**: detección, conexión, canal `FFF3` y reconexión. Ver `docs/luces.md`.
 
 ## Pendiente
 

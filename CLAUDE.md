@@ -22,6 +22,7 @@ Idioma: interfaz, documentación, mensajes de error y comentarios en español.
 - `src-tauri/src/settings/`: ajustes en JSON y almacén seguro (`SecretStore`).
 - `src-tauri/src/preview.rs`: capturas de la salida y de las fuentes (`GetSourceScreenshot`); solo capturan mientras alguien mira.
 - `src-tauri/src/panel/` y `src-tauri/web/`: panel web de red local para el móvil (HTTPS, emparejamiento, comandos, registro). Léelo en `docs/panel-web.md`.
+- `src-tauri/src/lights/` y `src/views/lights.ts`: tiras LED Bluetooth (protocolo Lotus Lamp reescrito en Rust, Bluetooth con `btleplug`). Léelo en `docs/luces.md`.
 - `src-tauri/src/avatar.rs` y `src-tauri/web/avatar*`: avatar animado (servidor solo en 127.0.0.1 y página para la fuente de navegador de OBS). Léelo en `docs/avatar.md`.
 - `src-tauri/src/app.rs`: comandos de Tauri (envoltorios finos sobre `Control`, `Panel` y `Avatar`).
 - `src/`: interfaz de escritorio sin framework: `main.ts` (cabecera y pestañas), `views/` (una por pestaña), `avatar/` (seguimiento con MediaPipe y sus conversiones, con pruebas), `api.ts`, `state.ts`, `mock.ts` (OBS simulado para `npm run dev` en un navegador).
@@ -32,7 +33,7 @@ Idioma: interfaz, documentación, mensajes de error y comentarios en español.
 ```bash
 npm install
 npm run tauri dev                  # arranca la app (necesita Rust y Node)
-cd src-tauri && cargo test         # 69 pruebas contra el OBS simulado (incluye TLS real del panel y el avatar)
+cd src-tauri && cargo test         # 85 pruebas contra el OBS simulado y una tira simulada (incluye TLS real del panel y el avatar)
 npm test                           # conversiones del seguimiento de la cara y la voz
 cd src-tauri && cargo test keyring_real -- --ignored   # almacén seguro REAL del sistema
 cd src-tauri && cargo run --example mock_obs           # OBS simulado en 127.0.0.1:4455
