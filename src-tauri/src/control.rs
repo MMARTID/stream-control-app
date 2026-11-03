@@ -1,0 +1,453 @@
+//! Núcleo de la app: refleja el estado de OBS y ejecuta las acciones.
+//!
+//! OBS es la fuente de verdad (README, §8): aquí solo hay una copia de lo que OBS cuenta,
+//! que se rehace al conectar y se mantiene con sus eventos. Las interfaces (la ventana de
+//! Tauri hoy, el panel web en la v1) leen `Snapshot` y llaman a los métodos de `Control`.
+
+use std::{collections::HashSet, sync::Arc, sync::Mutex};
+
+use serde::Serialize;
+use serde_json::Value;
+use tokio::sync::{broadcast, watch};
+
+use crate::{
+    obs::{ConnectionInfo, ConnectionState, ObsClient, ObsConfig, ObsError, protocol::ObsEvent},
+    settings::{
+        Settings, SettingsStore,
+        secrets::{OBS_PASSWORD_KEY, SecretStore},
+    },
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+pub struct StreamView {
+    pub active: bool,
+    pub reconnecting: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraView {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    /// La fuente existe en la escena en programa.
+    pub in_scene: bool,
+    /// La fuente está visible en la escena en programa.
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InputView {
+    pub name: String,
+    pub kind: String,
+}
+
+/// Todo lo que la interfaz necesita para pintarse. Nunca incluye la contraseña de OBS.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    pub connection: ConnectionInfo,
+    pub scenes: Vec<String>,
+    pub current_scene: Option<String>,
+    pub previous_scene: Option<String>,
+    pub stream: StreamView,
+    /// `None` si no hay micro elegido o aún no se sabe.
+    pub mic_muted: Option<bool>,
+    pub cameras: Vec<CameraView>,
+    pub settings: Settings,
+    pub has_password: bool,
+}
+
+/// Escena rápida en curso. Al salir de ella se devuelve el micro a como estaba.
+struct QuickRun {
+    scene: String,
+    /// Entrada que silenciamos nosotros y hay que reactivar al salir.
+    unmute_on_exit: Option<String>,
+}
+
+struct State {
+    settings: Settings,
+    quick_run: Option<QuickRun>,
+}
+
+pub struct Control {
+    obs: ObsClient,
+    store: SettingsStore,
+    secrets: Arc<dyn SecretStore>,
+    state: Mutex<State>,
+    snapshot_tx: watch::Sender<Snapshot>,
+}
+
+fn msg(e: ObsError) -> String {
+    e.to_string()
+}
+
+impl Control {
+    /// Carga los ajustes, arranca la conexión con OBS y las tareas que mantienen el estado.
+    /// Debe llamarse dentro de un runtime de tokio.
+    pub fn start(store: SettingsStore, secrets: Arc<dyn SecretStore>) -> Arc<Self> {
+        let settings = store.load();
+        let password = secrets.get(OBS_PASSWORD_KEY).ok().flatten();
+        let obs = ObsClient::spawn(Some(config_from(&settings, password.clone())));
+        let snapshot = Snapshot {
+            connection: obs.status().borrow().clone(),
+            settings: settings.clone(),
+            has_password: password.is_some(),
+            ..Default::default()
+        };
+        let (snapshot_tx, _) = watch::channel(snapshot);
+        let control = Arc::new(Self {
+            obs,
+            store,
+            secrets,
+            state: Mutex::new(State { settings, quick_run: None }),
+            snapshot_tx,
+        });
+
+        // Los eventos se escuchan antes de pedir el estado para no perder ninguno.
+        let events = control.obs.subscribe_events();
+        tokio::spawn(Arc::clone(&control).watch_events(events));
+        tokio::spawn(Arc::clone(&control).watch_connection());
+        control
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        self.snapshot_tx.borrow().clone()
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<Snapshot> {
+        self.snapshot_tx.subscribe()
+    }
+
+    fn update(&self, f: impl FnOnce(&mut Snapshot)) {
+        self.snapshot_tx.send_if_modified(|snapshot| {
+            let before = snapshot.clone();
+            f(snapshot);
+            *snapshot != before
+        });
+    }
+
+    fn settings(&self) -> Settings {
+        self.state.lock().unwrap().settings.clone()
+    }
+
+    fn current_scene(&self) -> Option<String> {
+        self.snapshot_tx.borrow().current_scene.clone()
+    }
+
+    // ---- Estado: sincronización con OBS ----
+
+    async fn watch_connection(self: Arc<Self>) {
+        let mut status = self.obs.status();
+        loop {
+            let info = status.borrow_and_update().clone();
+            let connected = info.state == ConnectionState::Connected;
+            self.update(|s| s.connection = info);
+            if connected {
+                self.refresh_all().await;
+            }
+            if status.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    async fn watch_events(self: Arc<Self>, mut events: broadcast::Receiver<ObsEvent>) {
+        loop {
+            match events.recv().await {
+                Ok(event) => self.on_event(event).await,
+                Err(broadcast::error::RecvError::Lagged(_)) => self.refresh_all().await,
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+
+    async fn refresh_all(&self) {
+        self.refresh_scenes().await;
+        if let Ok(status) = self.obs.get_stream_status().await {
+            self.update(|s| s.stream = StreamView { active: status.active, reconnecting: status.reconnecting });
+        }
+        self.refresh_mic().await;
+        self.refresh_cameras().await;
+    }
+
+    async fn refresh_scenes(&self) {
+        if let Ok(list) = self.obs.get_scene_list().await {
+            self.update(|s| {
+                if s.current_scene != list.current {
+                    if list.current.is_some() && s.current_scene.is_some() {
+                        s.previous_scene = s.current_scene.take();
+                    }
+                    s.current_scene = list.current;
+                }
+                s.scenes = list.scenes;
+            });
+        }
+    }
+
+    async fn refresh_mic(&self) {
+        let Some(input) = self.settings().mic_input else {
+            self.update(|s| s.mic_muted = None);
+            return;
+        };
+        let muted = self.obs.get_input_muted(&input).await.ok();
+        self.update(|s| s.mic_muted = muted);
+    }
+
+    async fn refresh_cameras(&self) {
+        let cameras = self.settings().cameras;
+        let items = match self.current_scene() {
+            Some(scene) if !cameras.is_empty() => self.obs.get_scene_items(&scene).await.unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let views = cameras
+            .into_iter()
+            .map(|c| {
+                let item = items.iter().find(|i| i.source_name == c.source);
+                CameraView {
+                    in_scene: item.is_some(),
+                    active: item.is_some_and(|i| i.enabled),
+                    id: c.id,
+                    name: c.name,
+                    source: c.source,
+                }
+            })
+            .collect();
+        self.update(|s| s.cameras = views);
+    }
+
+    async fn on_event(&self, event: ObsEvent) {
+        let data = event.event_data.unwrap_or(Value::Null);
+        let text = |key: &str| data.get(key).and_then(Value::as_str).map(str::to_owned);
+        match event.event_type.as_str() {
+            "CurrentProgramSceneChanged" => {
+                let Some(scene) = text("sceneName") else { return };
+                self.update(|s| {
+                    if s.current_scene.as_deref() != Some(scene.as_str()) {
+                        s.previous_scene = s.current_scene.take();
+                        s.current_scene = Some(scene.clone());
+                    }
+                });
+                self.leave_quick_scene_if_needed(&scene).await;
+                self.refresh_cameras().await;
+            }
+            "SceneListChanged" | "SceneCreated" | "SceneRemoved" | "SceneNameChanged" => {
+                self.refresh_scenes().await;
+            }
+            "StreamStateChanged" => {
+                let active = data.get("outputActive").and_then(Value::as_bool).unwrap_or(false);
+                let reconnecting = text("outputState").as_deref() == Some("OBS_WEBSOCKET_OUTPUT_RECONNECTING");
+                self.update(|s| s.stream = StreamView { active, reconnecting });
+            }
+            "InputMuteStateChanged" => {
+                if text("inputName") == self.settings().mic_input {
+                    let muted = data.get("inputMuted").and_then(Value::as_bool);
+                    self.update(|s| s.mic_muted = muted);
+                }
+            }
+            "SceneItemEnableStateChanged" => {
+                if text("sceneName") == self.current_scene() {
+                    self.refresh_cameras().await;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// RF-37: al salir de una escena rápida con acción de micro, se reactiva el micro
+    /// (solo si lo silenciamos nosotros al entrar).
+    async fn leave_quick_scene_if_needed(&self, new_scene: &str) {
+        let run = {
+            let mut state = self.state.lock().unwrap();
+            match &state.quick_run {
+                Some(run) if run.scene != new_scene => state.quick_run.take(),
+                _ => None,
+            }
+        };
+        if let Some(input) = run.and_then(|r| r.unmute_on_exit) {
+            let _ = self.obs.set_input_muted(&input, false).await;
+        }
+    }
+
+    // ---- Acciones ----
+
+    /// Lanza una escena de OBS (RF-11). Si es una escena rápida con acciones, las aplica (RF-37).
+    pub async fn launch_scene(&self, scene: &str) -> Result<(), String> {
+        let settings = self.settings();
+        let quick = settings.quick_scenes.iter().find(|q| q.scene == scene);
+        let wants_mute = quick.is_some_and(|q| q.mute_mic).then(|| settings.mic_input.clone()).flatten();
+        if quick.is_some_and(|q| q.mute_mic) && wants_mute.is_none() {
+            return Err("Esta escena silencia el micro, pero no hay micro elegido en Ajustes".into());
+        }
+
+        // Lo que ya silenciamos al entrar en una escena rápida anterior; se saca de `quick_run`
+        // para que el evento de cambio de escena no lo reactive a mitad de camino.
+        let carried = self.state.lock().unwrap().quick_run.take().and_then(|r| r.unmute_on_exit);
+
+        let mut unmute_on_exit = None;
+        if let Some(input) = &wants_mute {
+            if carried.as_deref() == Some(input.as_str()) {
+                unmute_on_exit = carried.clone();
+            } else if !self.obs.get_input_muted(input).await.map_err(msg)? {
+                self.obs.set_input_muted(input, true).await.map_err(msg)?;
+                unmute_on_exit = Some(input.clone());
+            }
+        }
+        if let Some(input) = &carried {
+            if unmute_on_exit.as_ref() != Some(input) {
+                self.obs.set_input_muted(input, false).await.map_err(msg)?;
+            }
+        }
+
+        if let Err(e) = self.obs.set_current_scene(scene).await {
+            if let Some(input) = &unmute_on_exit {
+                let _ = self.obs.set_input_muted(input, false).await;
+            }
+            return Err(msg(e));
+        }
+        if quick.is_some() {
+            self.state.lock().unwrap().quick_run = Some(QuickRun { scene: scene.to_owned(), unmute_on_exit });
+        }
+        Ok(())
+    }
+
+    /// RF-15: vuelve a la escena anterior. El micro se reactiva solo, al salir de la escena rápida.
+    pub async fn go_back(&self) -> Result<(), String> {
+        let previous = self
+            .snapshot_tx
+            .borrow()
+            .previous_scene
+            .clone()
+            .ok_or("Todavía no hay una escena anterior")?;
+        self.obs.set_current_scene(&previous).await.map_err(msg)
+    }
+
+    /// RF-6: muestra primero la cámara elegida y después oculta las demás, para que
+    /// nunca haya un instante sin cámara visible.
+    pub async fn switch_camera(&self, camera_id: &str) -> Result<(), String> {
+        let settings = self.settings();
+        let target = settings
+            .cameras
+            .iter()
+            .find(|c| c.id == camera_id)
+            .ok_or("Esa cámara ya no existe en los ajustes")?;
+        let scene = self.current_scene().ok_or("No hay escena en programa")?;
+        let items = self.obs.get_scene_items(&scene).await.map_err(msg)?;
+
+        let target_item = items
+            .iter()
+            .find(|i| i.source_name == target.source)
+            .ok_or_else(|| format!("La fuente «{}» no está en la escena «{scene}»", target.source))?;
+        if !target_item.enabled {
+            self.obs.set_scene_item_enabled(&scene, target_item.id, true).await.map_err(msg)?;
+        }
+
+        let others: HashSet<&str> =
+            settings.cameras.iter().filter(|c| c.id != target.id).map(|c| c.source.as_str()).collect();
+        for item in items.iter().filter(|i| i.enabled && i.id != target_item.id && others.contains(i.source_name.as_str())) {
+            self.obs.set_scene_item_enabled(&scene, item.id, false).await.map_err(msg)?;
+        }
+        Ok(())
+    }
+
+    pub async fn set_mic_muted(&self, muted: bool) -> Result<(), String> {
+        let input = self.settings().mic_input.ok_or("Elige primero el micro en Ajustes")?;
+        self.obs.set_input_muted(&input, muted).await.map_err(msg)
+    }
+
+    pub async fn toggle_mic(&self) -> Result<(), String> {
+        let input = self.settings().mic_input.ok_or("Elige primero el micro en Ajustes")?;
+        let muted = self.obs.get_input_muted(&input).await.map_err(msg)?;
+        self.obs.set_input_muted(&input, !muted).await.map_err(msg)
+    }
+
+    pub async fn start_stream(&self) -> Result<(), String> {
+        self.obs.start_stream().await.map_err(msg)
+    }
+
+    pub async fn stop_stream(&self) -> Result<(), String> {
+        self.obs.stop_stream().await.map_err(msg)
+    }
+
+    pub async fn list_inputs(&self) -> Result<Vec<InputView>, String> {
+        let inputs = self.obs.get_input_list().await.map_err(msg)?;
+        Ok(inputs.into_iter().map(|i| InputView { name: i.name, kind: i.kind }).collect())
+    }
+
+    // ---- Ajustes ----
+
+    pub async fn save_settings(&self, mut new: Settings) -> Result<(), String> {
+        validate(&mut new)?;
+        self.store.save(&new).map_err(|e| format!("No se pudieron guardar los ajustes: {e}"))?;
+        let obs_changed = {
+            let mut state = self.state.lock().unwrap();
+            let changed = state.settings.obs != new.obs;
+            state.settings = new.clone();
+            changed
+        };
+        self.update(|s| s.settings = new);
+        if obs_changed {
+            self.obs.set_config(Some(self.obs_config()));
+        }
+        self.refresh_mic().await;
+        self.refresh_cameras().await;
+        Ok(())
+    }
+
+    /// Guarda (o borra, si va vacía) la contraseña de OBS en el almacén seguro del sistema.
+    pub fn set_obs_password(&self, password: Option<String>) -> Result<(), String> {
+        let password = password.filter(|p| !p.is_empty());
+        match &password {
+            Some(p) => self.secrets.set(OBS_PASSWORD_KEY, p)?,
+            None => self.secrets.delete(OBS_PASSWORD_KEY)?,
+        }
+        self.update(|s| s.has_password = password.is_some());
+        self.obs.set_config(Some(self.obs_config()));
+        Ok(())
+    }
+
+    fn obs_config(&self) -> ObsConfig {
+        config_from(&self.settings(), self.secrets.get(OBS_PASSWORD_KEY).ok().flatten())
+    }
+}
+
+fn config_from(settings: &Settings, password: Option<String>) -> ObsConfig {
+    ObsConfig { host: settings.obs.host.trim().to_owned(), port: settings.obs.port, password }
+}
+
+fn validate(settings: &mut Settings) -> Result<(), String> {
+    if settings.obs.host.trim().is_empty() {
+        return Err("Falta la dirección de OBS".into());
+    }
+    if settings.obs.port == 0 {
+        return Err("El puerto de OBS no es válido".into());
+    }
+    let mut scenes = HashSet::new();
+    for q in &mut settings.quick_scenes {
+        if q.scene.trim().is_empty() {
+            return Err("Una escena rápida no tiene escena de OBS".into());
+        }
+        if !scenes.insert(q.scene.clone()) {
+            return Err(format!("La escena «{}» está duplicada en las escenas rápidas", q.scene));
+        }
+        if q.label.trim().is_empty() {
+            q.label = q.scene.clone();
+        }
+    }
+    let mut ids = HashSet::new();
+    for c in &mut settings.cameras {
+        if c.source.trim().is_empty() {
+            return Err("Una cámara no tiene fuente de OBS".into());
+        }
+        if c.name.trim().is_empty() {
+            c.name = c.source.clone();
+        }
+        if c.id.is_empty() {
+            c.id = uuid::Uuid::new_v4().to_string();
+        }
+        if !ids.insert(c.id.clone()) {
+            return Err("Hay dos cámaras con el mismo identificador".into());
+        }
+    }
+    Ok(())
+}
