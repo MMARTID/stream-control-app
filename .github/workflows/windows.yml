@@ -1,0 +1,59 @@
+name: Build de Windows
+
+# Compila y prueba la app en Windows y deja el .exe portable y el instalador como artefactos
+# descargables. Se lanza a mano (Actions → «Build de Windows» → Run workflow) o al subir una etiqueta v*.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependencias de la interfaz
+        run: npm ci
+
+      # Primera comprobación en Windows: las 22 pruebas contra el OBS simulado.
+      - name: Pruebas de Rust
+        working-directory: src-tauri
+        run: cargo test
+
+      # Almacén seguro REAL (Credential Manager). No bloquea el build: informa de si funciona.
+      - name: Prueba del Credential Manager de Windows
+        working-directory: src-tauri
+        continue-on-error: true
+        run: cargo test keyring_real -- --ignored
+
+      - name: Compilar la app (portable e instalador NSIS)
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Subir el .exe portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-control-windows-portable
+          path: src-tauri/target/release/stream-control.exe
+          if-no-files-found: error
+
+      - name: Subir el instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-control-windows-instalador
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

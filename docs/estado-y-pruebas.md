@@ -37,6 +37,21 @@ Peticiones de obs-websocket usadas: `GetVersion`, `GetSceneList`, `SetCurrentPro
 
 El panel web de red local es v1: no se ha empezado.
 
+## Compilar para Windows
+
+El repositorio no incluye ningún `.exe` compilado: se genera en Windows. Hay dos caminos.
+
+**En el PC con Windows** (necesita Rust con toolchain MSVC, Visual Studio Build Tools con C++, Node y WebView2):
+
+```powershell
+npm install
+npm run tauri build -- --bundles nsis
+```
+
+Resultado: `src-tauri\target\release\stream-control.exe` (portable, se ejecuta desde su carpeta sin instalar, RF-27) y el instalador en `src-tauri\target\release\bundle\nsis\`. Para solo probar: `npm run tauri dev`.
+
+**En GitHub Actions** (sin instalar nada): pestaña Actions → «Build de Windows» → Run workflow. Ejecuta `cargo test` en Windows, la prueba del Credential Manager real y deja el `.exe` portable y el instalador como artefactos descargables (`.github/workflows/windows.yml`). El `.exe` no está firmado: Windows SmartScreen avisará la primera vez (README, §11).
+
 ## Prueba manual sin OBS
 
 ```bash
