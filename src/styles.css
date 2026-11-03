@@ -261,3 +261,5 @@ summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
 .tabs button, button.live, button.on-air, button.danger { white-space: nowrap; }
 .pill { max-width: 280px; }
 @media (max-width: 1000px) { .brand small { display: none; } }
+details.help-open ol { margin: 8px 0 8px 18px; padding: 0; display: grid; gap: 6px; }
+details.help-open summary { color: var(--text); }

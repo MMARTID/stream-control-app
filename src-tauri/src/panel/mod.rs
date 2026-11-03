@@ -157,7 +157,7 @@ impl Panel {
     }
 
     async fn launch(&self, port: u16) -> Result<Running, String> {
-        let ips = tls::local_ips();
+        let ips = tls::all_private_ips();
         let identity = tls::ensure_identity(&self.dir, self.secrets.as_ref(), &ips, tls::hostname().as_deref())?;
         let _ = rustls::crypto::ring::default_provider().install_default();
         let config = RustlsConfig::from_pem(identity.cert_pem.into_bytes(), identity.key_pem.into_bytes())

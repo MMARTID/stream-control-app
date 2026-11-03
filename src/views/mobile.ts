@@ -104,6 +104,20 @@ export function updateMobile() {
     </section>
 
     <section class="card">
+      <details class="help-open"><summary><b>¿No se abre en el móvil?</b> Revisa esto</summary>
+        <ol>
+          <li><b>La misma Wi‑Fi.</b> El móvil y el PC tienen que estar en la misma red (no con datos móviles ni en la «red de invitados» del router).</li>
+          <li><b>La dirección correcta.</b> Si el PC tiene varias, prueba las otras de la lista de arriba. Debe empezar por la de tu Wi‑Fi (suele ser 192.168.…).</li>
+          <li><b>El Firewall de Windows.</b> La primera vez pregunta si permite la app: elige <b>redes privadas</b>. Si lo cerraste sin contestar, ábrelo en <i>Windows Defender Firewall → Permitir una aplicación</i> y marca Stream Control en «Privada».</li>
+          <li><b>La red tiene que ser «Privada» en Windows.</b> En <i>Configuración → Red e Internet → Wi‑Fi → tu red → Tipo de perfil de red</i>, elige <b>Privada</b>. En una red «Pública» Windows bloquea las conexiones entrantes.</li>
+          <li><b>El aviso del navegador.</b> Si dice «La conexión no es privada», pulsa <b>Avanzado → Continuar</b>. Si no te deja continuar, prueba con Chrome o Samsung Internet.</li>
+          <li><b>Router.</b> Algunos routers tienen «aislamiento de clientes» (AP isolation) y no dejan que un móvil hable con el PC. Desactívalo en el router.</li>
+        </ol>
+        <p class="hint">Dime qué ve el móvil exactamente (por ejemplo «no se puede acceder al sitio» o «tiempo de espera agotado») y te digo cuál es.</p>
+      </details>
+    </section>
+
+    <section class="card">
       <h3><span class="num">3</span> Escribe el código en el móvil</h3>
       ${
         pairings.length

@@ -29,17 +29,65 @@ pub fn is_lan(ip: IpAddr) -> bool {
     }
 }
 
-/// Direcciones IPv4 privadas de este equipo (las que ve el móvil en la misma Wi‑Fi).
-pub fn local_ips() -> Vec<Ipv4Addr> {
-    let mut ips: Vec<Ipv4Addr> = if_addrs::get_if_addrs()
+/// Nombres de adaptadores que no son la red a la que se conecta un móvil (máquinas virtuales, contenedores, VPN).
+const VIRTUAL_ADAPTERS: [&str; 14] = [
+    "vethernet", "virtualbox", "vmware", "hyper-v", "wsl", "docker", "vbox", "loopback", "tailscale", "zerotier",
+    "hamachi", "veth", "br-", "utun",
+];
+
+/// Ordena las direcciones para enseñarlas: la de la red principal primero y los adaptadores virtuales fuera
+/// (salvo que no quede ninguna otra). `adapters` son pares (nombre del adaptador, dirección).
+pub fn rank_ips(adapters: &[(String, Ipv4Addr)], primary: Option<Ipv4Addr>) -> Vec<Ipv4Addr> {
+    let is_virtual = |name: &str| {
+        let n = name.to_lowercase();
+        VIRTUAL_ADAPTERS.iter().any(|v| n.contains(v))
+    };
+    let mut real: Vec<Ipv4Addr> = adapters.iter().filter(|(n, _)| !is_virtual(n)).map(|(_, ip)| *ip).collect();
+    if real.is_empty() {
+        real = adapters.iter().map(|(_, ip)| *ip).collect();
+    }
+    real.sort();
+    real.dedup();
+    if let Some(p) = primary {
+        if let Some(at) = real.iter().position(|ip| *ip == p) {
+            real.swap(0, at);
+            real[1..].sort();
+        }
+    }
+    real
+}
+
+fn private_adapters() -> Vec<(String, Ipv4Addr)> {
+    if_addrs::get_if_addrs()
         .unwrap_or_default()
         .into_iter()
         .filter(|i| !i.is_loopback())
         .filter_map(|i| match i.ip() {
-            IpAddr::V4(v4) if v4.is_private() => Some(v4),
+            IpAddr::V4(v4) if v4.is_private() => Some((i.name.clone(), v4)),
             _ => None,
         })
-        .collect();
+        .collect()
+}
+
+/// La dirección con la que este equipo sale a la red (la de su ruta por defecto). No envía ningún paquete:
+/// un socket UDP «conectado» solo hace que el sistema elija la interfaz.
+fn primary_ip() -> Option<Ipv4Addr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(v4) if v4.is_private() => Some(v4),
+        _ => None,
+    }
+}
+
+/// Direcciones que se le dan al usuario para abrir en el móvil: la de la red principal primero.
+pub fn local_ips() -> Vec<Ipv4Addr> {
+    rank_ips(&private_adapters(), primary_ip())
+}
+
+/// Todas las direcciones privadas del equipo, para que el certificado sirva con cualquiera de ellas.
+pub fn all_private_ips() -> Vec<Ipv4Addr> {
+    let mut ips: Vec<Ipv4Addr> = private_adapters().into_iter().map(|(_, ip)| ip).collect();
     ips.sort();
     ips.dedup();
     ips
@@ -123,6 +171,24 @@ mod tests {
         for bad in ["8.8.8.8", "172.32.0.1", "100.64.0.1", "1.1.1.1", "2606:4700::1111", "::ffff:8.8.8.8"] {
             assert!(!is_lan(bad.parse().unwrap()), "{bad} NO debería ser local");
         }
+    }
+
+    #[test]
+    fn la_direccion_del_wifi_va_primero_y_los_adaptadores_virtuales_se_ignoran() {
+        let ip = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+        let adapters = vec![
+            ("vEthernet (WSL)".to_owned(), ip("172.24.16.1")),
+            ("VirtualBox Host-Only Network".to_owned(), ip("192.168.56.1")),
+            ("Wi-Fi".to_owned(), ip("192.168.1.12")),
+            ("Ethernet".to_owned(), ip("10.0.0.5")),
+        ];
+        // Con la ruta por defecto conocida, esa va primera; las virtuales no salen.
+        assert_eq!(rank_ips(&adapters, Some(ip("192.168.1.12"))), [ip("192.168.1.12"), ip("10.0.0.5")]);
+        // Sin ruta por defecto, siguen sin salir las virtuales.
+        assert_eq!(rank_ips(&adapters, None), [ip("10.0.0.5"), ip("192.168.1.12")]);
+        // Si solo hay adaptadores virtuales, se devuelven (mejor eso que nada).
+        let only_virtual = vec![("vEthernet (WSL)".to_owned(), ip("172.24.16.1"))];
+        assert_eq!(rank_ips(&only_virtual, None), [ip("172.24.16.1")]);
     }
 
     #[test]
