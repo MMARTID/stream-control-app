@@ -4,14 +4,18 @@
 //! que se rehace al conectar y se mantiene con sus eventos. Las interfaces (la ventana de
 //! Tauri hoy, el panel web en la v1) leen `Snapshot` y llaman a los métodos de `Control`.
 
-use std::{collections::HashSet, sync::Arc, sync::Mutex};
+use std::{collections::HashSet, sync::Arc, sync::Mutex, time::Duration};
 
 use serde::Serialize;
 use serde_json::Value;
-use tokio::sync::{broadcast, watch};
+use tokio::{
+    sync::{broadcast, watch},
+    time::{Instant, interval},
+};
 
 use crate::{
     obs::{ConnectionInfo, ConnectionState, ObsClient, ObsConfig, ObsError, protocol::ObsEvent},
+    preview::{Interest, PreviewHub},
     settings::{
         Settings, SettingsStore,
         secrets::{OBS_PASSWORD_KEY, SecretStore},
@@ -36,6 +40,34 @@ pub struct CameraView {
     pub active: bool,
 }
 
+/// Un elemento de la escena en programa (RF-12).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceView {
+    pub id: i64,
+    pub name: String,
+    pub enabled: bool,
+    /// Tiene imagen que mostrar (no es solo audio).
+    pub visual: bool,
+    pub kind: Option<String>,
+}
+
+/// Salud del directo (RF-24). Se mide cada 2 s mientras haya conexión.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Health {
+    pub cpu: f64,
+    pub fps: f64,
+    /// `None` si no se emite o aún no hay dos muestras.
+    pub bitrate_kbps: Option<u32>,
+    pub dropped_frames: u64,
+    pub total_frames: u64,
+    pub render_skipped_frames: u64,
+    pub render_total_frames: u64,
+    pub congestion: f64,
+    pub duration_secs: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InputView {
     pub name: String,
@@ -54,6 +86,9 @@ pub struct Snapshot {
     /// `None` si no hay micro elegido o aún no se sabe.
     pub mic_muted: Option<bool>,
     pub cameras: Vec<CameraView>,
+    /// Todos los elementos de la escena en programa.
+    pub sources: Vec<SourceView>,
+    pub health: Option<Health>,
     pub settings: Settings,
     pub has_password: bool,
 }
@@ -76,6 +111,7 @@ pub struct Control {
     secrets: Arc<dyn SecretStore>,
     state: Mutex<State>,
     snapshot_tx: watch::Sender<Snapshot>,
+    preview: Arc<PreviewHub>,
 }
 
 fn msg(e: ObsError) -> String {
@@ -95,19 +131,22 @@ impl Control {
             has_password: password.is_some(),
             ..Default::default()
         };
-        let (snapshot_tx, _) = watch::channel(snapshot);
+        let (snapshot_tx, snapshot_rx) = watch::channel(snapshot);
+        let preview = PreviewHub::start(obs.clone(), move || snapshot_rx.borrow().current_scene.clone());
         let control = Arc::new(Self {
             obs,
             store,
             secrets,
             state: Mutex::new(State { settings, quick_run: None }),
             snapshot_tx,
+            preview,
         });
 
         // Los eventos se escuchan antes de pedir el estado para no perder ninguno.
         let events = control.obs.subscribe_events();
         tokio::spawn(Arc::clone(&control).watch_events(events));
         tokio::spawn(Arc::clone(&control).watch_connection());
+        tokio::spawn(Arc::clone(&control).watch_health());
         control
     }
 
@@ -117,6 +156,21 @@ impl Control {
 
     pub fn subscribe(&self) -> watch::Receiver<Snapshot> {
         self.snapshot_tx.subscribe()
+    }
+
+    pub fn preview(&self) -> &Arc<PreviewHub> {
+        &self.preview
+    }
+
+    /// Dice qué capturas quiere ver `consumer`. Solo se admiten fuentes de la escena en programa.
+    pub fn watch_previews(&self, consumer: &str, mut interest: Interest) {
+        let known: HashSet<String> = {
+            let s = self.snapshot_tx.borrow();
+            s.sources.iter().filter(|x| x.visual).map(|x| x.name.clone()).collect()
+        };
+        interest.sources.retain(|name| known.contains(name));
+        interest.sources.dedup();
+        self.preview.set_interest(consumer, interest);
     }
 
     fn update(&self, f: impl FnOnce(&mut Snapshot)) {
@@ -168,7 +222,7 @@ impl Control {
             self.update(|s| s.stream = StreamView { active: status.active, reconnecting: status.reconnecting });
         }
         self.refresh_mic().await;
-        self.refresh_cameras().await;
+        self.refresh_scene_items().await;
     }
 
     async fn refresh_scenes(&self) {
@@ -194,12 +248,23 @@ impl Control {
         self.update(|s| s.mic_muted = muted);
     }
 
-    async fn refresh_cameras(&self) {
+    /// Relee los elementos de la escena en programa: alimenta las cámaras y la lista de fuentes.
+    async fn refresh_scene_items(&self) {
         let cameras = self.settings().cameras;
         let items = match self.current_scene() {
-            Some(scene) if !cameras.is_empty() => self.obs.get_scene_items(&scene).await.unwrap_or_default(),
-            _ => Vec::new(),
+            Some(scene) => self.obs.get_scene_items(&scene).await.unwrap_or_default(),
+            None => Vec::new(),
         };
+        let sources = items
+            .iter()
+            .map(|i| SourceView {
+                id: i.id,
+                name: i.source_name.clone(),
+                enabled: i.enabled,
+                visual: is_visual(i.kind.as_deref()),
+                kind: i.kind.clone(),
+            })
+            .collect();
         let views = cameras
             .into_iter()
             .map(|c| {
@@ -213,7 +278,10 @@ impl Control {
                 }
             })
             .collect();
-        self.update(|s| s.cameras = views);
+        self.update(|s| {
+            s.cameras = views;
+            s.sources = sources;
+        });
     }
 
     async fn on_event(&self, event: ObsEvent) {
@@ -229,7 +297,7 @@ impl Control {
                     }
                 });
                 self.leave_quick_scene_if_needed(&scene).await;
-                self.refresh_cameras().await;
+                self.refresh_scene_items().await;
             }
             "SceneListChanged" | "SceneCreated" | "SceneRemoved" | "SceneNameChanged" => {
                 self.refresh_scenes().await;
@@ -245,9 +313,9 @@ impl Control {
                     self.update(|s| s.mic_muted = muted);
                 }
             }
-            "SceneItemEnableStateChanged" => {
+            "SceneItemEnableStateChanged" | "SceneItemCreated" | "SceneItemRemoved" | "SceneItemListReindexed" => {
                 if text("sceneName") == self.current_scene() {
-                    self.refresh_cameras().await;
+                    self.refresh_scene_items().await;
                 }
             }
             _ => {}
@@ -266,6 +334,44 @@ impl Control {
         };
         if let Some(input) = run.and_then(|r| r.unmute_on_exit) {
             let _ = self.obs.set_input_muted(&input, false).await;
+        }
+    }
+
+    /// RF-24: carga de OBS, FPS, bitrate y frames perdidos.
+    async fn watch_health(self: Arc<Self>) {
+        let mut tick = interval(Duration::from_secs(2));
+        let mut last_bytes: Option<(u64, Instant)> = None;
+        loop {
+            tick.tick().await;
+            if self.snapshot_tx.borrow().connection.state != ConnectionState::Connected {
+                last_bytes = None;
+                self.update(|s| s.health = None);
+                continue;
+            }
+            let (stats, stream) = tokio::join!(self.obs.get_stats(), self.obs.get_stream_status());
+            let (Ok(stats), Ok(stream)) = (stats, stream) else { continue };
+            let now = Instant::now();
+            let bitrate_kbps = match last_bytes {
+                Some((bytes, at)) if stream.active && stream.bytes >= bytes => {
+                    let secs = now.duration_since(at).as_secs_f64();
+                    (secs > 0.2).then(|| ((stream.bytes - bytes) as f64 * 8.0 / 1000.0 / secs).round() as u32)
+                }
+                _ => None,
+            };
+            last_bytes = Some((stream.bytes, now));
+            let round1 = |x: f64| (x * 10.0).round() / 10.0;
+            let health = Health {
+                cpu: round1(stats.cpu_usage),
+                fps: round1(stats.active_fps),
+                bitrate_kbps,
+                dropped_frames: stream.skipped_frames,
+                total_frames: stream.total_frames,
+                render_skipped_frames: stats.render_skipped_frames,
+                render_total_frames: stats.render_total_frames,
+                congestion: (stream.congestion * 100.0).round() / 100.0,
+                duration_secs: if stream.active { stream.duration_ms / 1000 } else { 0 },
+            };
+            self.update(|s| s.health = Some(health));
         }
     }
 
@@ -350,6 +456,16 @@ impl Control {
         Ok(())
     }
 
+    /// RF-12: muestra u oculta un elemento de la escena en programa.
+    pub async fn set_source_enabled(&self, item_id: i64, enabled: bool) -> Result<(), String> {
+        let scene = self.current_scene().ok_or("No hay escena en programa")?;
+        let known = self.snapshot_tx.borrow().sources.iter().any(|s| s.id == item_id);
+        if !known {
+            return Err("Esa fuente ya no está en la escena".into());
+        }
+        self.obs.set_scene_item_enabled(&scene, item_id, enabled).await.map_err(msg)
+    }
+
     pub async fn set_mic_muted(&self, muted: bool) -> Result<(), String> {
         let input = self.settings().mic_input.ok_or("Elige primero el micro en Ajustes")?;
         self.obs.set_input_muted(&input, muted).await.map_err(msg)
@@ -390,7 +506,7 @@ impl Control {
             self.obs.set_config(Some(self.obs_config()));
         }
         self.refresh_mic().await;
-        self.refresh_cameras().await;
+        self.refresh_scene_items().await;
         Ok(())
     }
 
@@ -450,4 +566,12 @@ fn validate(settings: &mut Settings) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Los elementos solo de audio no tienen imagen que capturar.
+fn is_visual(kind: Option<&str>) -> bool {
+    let Some(kind) = kind else { return true };
+    !["wasapi_", "coreaudio", "pulse_", "alsa_", "jack_", "sndio", "oss_", "audio"]
+        .iter()
+        .any(|audio| kind.contains(audio))
 }

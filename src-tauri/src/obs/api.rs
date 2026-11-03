@@ -26,12 +26,28 @@ pub struct SceneItem {
     pub id: i64,
     pub source_name: String,
     pub enabled: bool,
+    /// `inputKind` de OBS (p. ej. `dshow_input`). Vacío en escenas anidadas.
+    pub kind: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StreamStatus {
     pub active: bool,
     pub reconnecting: bool,
+    pub duration_ms: u64,
+    pub bytes: u64,
+    pub skipped_frames: u64,
+    pub total_frames: u64,
+    pub congestion: f64,
+}
+
+/// `GetStats`: carga de OBS.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ObsStats {
+    pub cpu_usage: f64,
+    pub active_fps: f64,
+    pub render_skipped_frames: u64,
+    pub render_total_frames: u64,
 }
 
 fn data(response: Option<Value>) -> Result<Value, ObsError> {
@@ -113,6 +129,7 @@ impl ObsClient {
                         .ok_or_else(|| ObsError::Protocol("falta `sceneItemId`".into()))?,
                     source_name: str_field(i, "sourceName")?,
                     enabled: bool_field(i, "sceneItemEnabled")?,
+                    kind: i.get("inputKind").and_then(Value::as_str).map(str::to_owned),
                 })
             })
             .collect()
@@ -129,9 +146,67 @@ impl ObsClient {
 
     pub async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         let v = data(self.request("GetStreamStatus", None).await?)?;
+        let num = |key: &str| v.get(key).and_then(Value::as_u64).unwrap_or(0);
         Ok(StreamStatus {
             active: bool_field(&v, "outputActive")?,
             reconnecting: bool_field(&v, "outputReconnecting")?,
+            duration_ms: num("outputDuration"),
+            bytes: num("outputBytes"),
+            skipped_frames: num("outputSkippedFrames"),
+            total_frames: num("outputTotalFrames"),
+            congestion: v.get("outputCongestion").and_then(Value::as_f64).unwrap_or(0.0),
+        })
+    }
+
+    pub async fn get_stats(&self) -> Result<ObsStats, ObsError> {
+        let v = data(self.request("GetStats", None).await?)?;
+        let num = |key: &str| v.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+        Ok(ObsStats {
+            cpu_usage: num("cpuUsage"),
+            active_fps: num("activeFps"),
+            render_skipped_frames: num("renderSkippedFrames") as u64,
+            render_total_frames: num("renderTotalFrames") as u64,
+        })
+    }
+
+    /// Formatos de imagen que admite `GetSourceScreenshot` (campo `supportedImageFormats` de `GetVersion`).
+    pub async fn get_image_formats(&self) -> Result<Vec<String>, ObsError> {
+        let v = data(self.request("GetVersion", None).await?)?;
+        Ok(v.get("supportedImageFormats")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default())
+    }
+
+    /// Captura de una fuente o escena, escalada a `width` px de ancho. Devuelve un «data URI»
+    /// listo para usar como `src` de una imagen.
+    pub async fn get_source_screenshot(
+        &self,
+        source: &str,
+        format: &str,
+        width: u32,
+        quality: i32,
+    ) -> Result<String, ObsError> {
+        let v = data(
+            self.request(
+                "GetSourceScreenshot",
+                Some(json!({
+                    "sourceName": source,
+                    "imageFormat": format,
+                    "imageWidth": width,
+                    "imageCompressionQuality": quality,
+                })),
+            )
+            .await?,
+        )?;
+        let image = str_field(&v, "imageData")?;
+        // La documentación dice «Base64-encoded screenshot»; OBS lo devuelve ya como data URI.
+        // Se acepta también base64 a secas.
+        Ok(if image.starts_with("data:") {
+            image
+        } else {
+            let mime = if format == "jpg" { "jpeg" } else { format };
+            format!("data:image/{mime};base64,{image}")
         })
     }
 

@@ -26,7 +26,11 @@ pub struct Item {
     pub id: i64,
     pub source: String,
     pub enabled: bool,
+    pub kind: &'static str,
 }
+
+/// JPEG válido de 1×1 px, para las capturas simuladas.
+pub const TINY_JPEG: &str = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
 
 pub struct MockState {
     pub password: Option<String>,
@@ -37,14 +41,18 @@ pub struct MockState {
     pub items: HashMap<String, Vec<Item>>,
     /// Peticiones recibidas, en orden: (tipo, datos).
     pub log: Vec<(String, Value)>,
+    /// Bytes enviados por el stream; sube con cada consulta para poder medir el bitrate.
+    pub stream_bytes: u64,
 }
 
 impl MockState {
     fn new(password: Option<String>) -> Self {
         let cameras = || {
             vec![
-                Item { id: 1, source: "Cámara móvil".into(), enabled: true },
-                Item { id: 2, source: "Webcam".into(), enabled: false },
+                Item { id: 1, source: "Cámara móvil".into(), enabled: true, kind: "dshow_input" },
+                Item { id: 2, source: "Webcam".into(), enabled: false, kind: "dshow_input" },
+                Item { id: 3, source: "Marco".into(), enabled: true, kind: "image_source" },
+                Item { id: 4, source: "Micro".into(), enabled: true, kind: "wasapi_input_capture" },
             ]
         };
         let mut items = HashMap::new();
@@ -59,6 +67,7 @@ impl MockState {
             streaming: false,
             items,
             log: vec![],
+            stream_bytes: 0,
         }
     }
 }
@@ -186,7 +195,7 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
     s.log.push((kind.to_owned(), data.clone()));
     let not_found = |what: &str| Err((600, format!("No existe {what}")));
     match kind {
-        "GetVersion" => (Ok(Some(json!({ "obsVersion": "31.0.0", "obsWebSocketVersion": "5.5.2", "rpcVersion": 1 }))), vec![]),
+        "GetVersion" => (Ok(Some(json!({ "obsVersion": "31.0.0", "obsWebSocketVersion": "5.5.2", "rpcVersion": 1, "supportedImageFormats": ["jpg", "png"] }))), vec![]),
         "GetSceneList" => {
             let scenes: Vec<Value> = s
                 .scenes
@@ -239,7 +248,7 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
             Some(items) => {
                 let items: Vec<Value> = items
                     .iter()
-                    .map(|i| json!({ "sceneItemId": i.id, "sourceName": i.source, "sceneItemEnabled": i.enabled, "sceneItemIndex": i.id }))
+                    .map(|i| json!({ "sceneItemId": i.id, "sourceName": i.source, "sceneItemEnabled": i.enabled, "sceneItemIndex": i.id, "inputKind": i.kind, "sourceType": "OBS_SOURCE_TYPE_INPUT" }))
                     .collect();
                 (Ok(Some(json!({ "sceneItems": items }))), vec![])
             }
@@ -263,10 +272,40 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
                 None => (not_found("el elemento"), vec![]),
             }
         }
-        "GetStreamStatus" => (
-            Ok(Some(json!({ "outputActive": s.streaming, "outputReconnecting": false, "outputTimecode": "00:00:00.000", "outputDuration": 0 }))),
+        "GetStreamStatus" => {
+            if s.streaming {
+                s.stream_bytes += 500_000;
+            }
+            (
+                Ok(Some(json!({
+                    "outputActive": s.streaming, "outputReconnecting": false, "outputTimecode": "00:00:00.000",
+                    "outputDuration": if s.streaming { 5000 } else { 0 }, "outputCongestion": 0.0,
+                    "outputBytes": s.stream_bytes, "outputSkippedFrames": 3, "outputTotalFrames": 300,
+                }))),
+                vec![],
+            )
+        }
+        "GetStats" => (
+            Ok(Some(json!({
+                "cpuUsage": 7.25, "memoryUsage": 480.0, "availableDiskSpace": 100000.0, "activeFps": 59.94,
+                "averageFrameRenderTime": 2.1, "renderSkippedFrames": 1, "renderTotalFrames": 3000,
+                "outputSkippedFrames": 3, "outputTotalFrames": 300,
+            }))),
             vec![],
         ),
+        "GetSourceScreenshot" => {
+            let name = data["sourceName"].as_str().unwrap_or_default();
+            let known = s.scenes.iter().any(|n| n == name) || s.items.values().flatten().any(|i| i.source == name);
+            // Una fuente oculta no tiene imagen que capturar, como una cámara apagada en OBS.
+            let visible = s.items.values().flatten().any(|i| i.source == name && i.enabled) || s.scenes.iter().any(|n| n == name);
+            if !known {
+                (not_found("la fuente"), vec![])
+            } else if !visible {
+                (Err((702, "No se pudo generar la captura".into())), vec![])
+            } else {
+                (Ok(Some(json!({ "imageData": format!("data:image/jpeg;base64,{TINY_JPEG}") }))), vec![])
+            }
+        }
         "StartStream" | "StopStream" => {
             let start = kind == "StartStream";
             if s.streaming == start {
