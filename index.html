@@ -8,72 +8,29 @@
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body>
-    <header class="bar">
-      <h1>Stream Control</h1>
-      <div id="connection" class="pill" role="status"></div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <strong>Stream Control</strong>
+        <small id="version"></small>
+      </div>
+      <nav class="tabs" id="tabs" role="tablist" aria-label="Secciones">
+        <button role="tab" data-tab="live"><span aria-hidden="true">🎬</span> Directo</button>
+        <button role="tab" data-tab="avatar"><span aria-hidden="true">🎭</span> Avatar</button>
+        <button role="tab" data-tab="mobile"><span aria-hidden="true">📱</span> Móvil</button>
+        <button role="tab" data-tab="settings"><span aria-hidden="true">⚙️</span> Ajustes</button>
+      </nav>
       <div class="spacer"></div>
+      <div id="connection" class="pill" role="status"></div>
       <div id="stream-control"></div>
-      <button class="ghost" data-action="open-settings" id="settings-button">Ajustes</button>
     </header>
 
     <div id="toast" class="toast" role="alert" hidden></div>
     <div id="pairing" class="pairing" role="status" hidden></div>
 
-    <main id="live">
-      <section class="top">
-        <div>
-          <h2>Salida en programa</h2>
-          <div class="frame empty">
-            <img data-frame="@program" alt="Salida en programa" />
-            <span id="program-label" class="label"></span>
-          </div>
-          <p class="hint">Capturas de OBS (unas 3 por segundo), no vídeo en directo.</p>
-        </div>
-        <div>
-          <h2>Salud del directo</h2>
-          <div id="health" class="health"></div>
-        </div>
-      </section>
-
-      <section>
-        <div class="section-head">
-          <h2>Escenas rápidas</h2>
-          <div class="tools">
-            <button data-action="back" id="back-button">↩ Escena anterior</button>
-            <button data-action="mic" id="mic-button">Micro</button>
-          </div>
-        </div>
-        <div id="quick" class="grid"></div>
-      </section>
-
-      <section>
-        <h2>Cámaras</h2>
-        <div id="cameras" class="grid cameras"></div>
-      </section>
-
-      <section>
-        <h2>Fuentes de la escena</h2>
-        <div id="sources" class="sources"></div>
-      </section>
-
-      <section>
-        <div class="section-head">
-          <h2>Todas las escenas</h2>
-          <input id="search" type="search" placeholder="Buscar escena por nombre" autocomplete="off" />
-        </div>
-        <div id="scenes" class="scene-list"></div>
-      </section>
-    </main>
-
-    <main id="settings" hidden>
-      <div class="section-head">
-        <h2>Ajustes</h2>
-        <div class="tools">
-          <button data-action="close-settings" class="ghost">Cancelar</button>
-          <button data-action="save-settings" class="primary">Guardar</button>
-        </div>
-      </div>
-      <div id="settings-form"></div>
-    </main>
+    <main id="view-live" class="view"></main>
+    <main id="view-avatar" class="view" hidden></main>
+    <main id="view-mobile" class="view" hidden></main>
+    <main id="view-settings" class="view" hidden></main>
   </body>
 </html>

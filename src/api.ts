@@ -1,6 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import type { AvatarFrame } from "./avatar/mapping";
 
+export type { AvatarFrame };
 export type ConnState = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export interface QuickScene {
@@ -24,9 +27,16 @@ export interface PanelSettings {
   onlyQuickScenes: boolean;
 }
 
+export interface AvatarSettings {
+  enabled: boolean;
+  port: number;
+  character: string;
+}
+
 export interface Settings {
   obs: { host: string; port: number };
   panel: PanelSettings;
+  avatar: AvatarSettings;
   micInput: string | null;
   quickScenes: QuickScene[];
   cameras: CameraConfig[];
@@ -115,29 +125,60 @@ export interface PanelStatus {
   audit: PanelAuditEntry[];
 }
 
+export interface AvatarStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  url: string;
+  error: string | null;
+  clients: number;
+}
+
 export interface InputView {
   name: string;
   kind: string;
 }
 
+/** `true` dentro de la app de escritorio. Fuera (navegador de desarrollo) se usa un OBS simulado en `mock.ts`. */
+export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+let mockModule: Promise<typeof import("./mock")> | null = null;
+const mock = () => (mockModule ??= import("./mock"));
+
+function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return inTauri ? tauriInvoke<T>(cmd, args) : mock().then((m) => m.invoke(cmd, args) as Promise<T>);
+}
+
+async function listen<T>(event: string, handler: (payload: T) => void): Promise<void> {
+  if (inTauri) {
+    await tauriListen<T>(event, (e) => handler(e.payload));
+  } else {
+    (await mock()).listen(event, handler as (p: unknown) => void);
+  }
+}
+
 export const api = {
-  getSnapshot: () => invoke<Snapshot>("get_snapshot"),
-  launchScene: (scene: string) => invoke<void>("launch_scene", { scene }),
-  goBack: () => invoke<void>("go_back"),
-  switchCamera: (cameraId: string) => invoke<void>("switch_camera", { cameraId }),
-  toggleMic: () => invoke<void>("toggle_mic"),
-  startStream: () => invoke<void>("start_stream"),
-  stopStream: () => invoke<void>("stop_stream"),
-  watchPreviews: (interest: Interest) => invoke<void>("watch_previews", { interest }),
-  setSourceEnabled: (id: number, enabled: boolean) => invoke<void>("set_source_enabled", { id, enabled }),
-  getPanelStatus: () => invoke<PanelStatus>("get_panel_status"),
-  setPanelPassword: (password: string | null) => invoke<void>("set_panel_password", { password }),
-  revokeDevice: (id: string) => invoke<void>("revoke_device", { id }),
-  onPanel: (handler: (s: PanelStatus) => void) => listen<PanelStatus>("panel", (e) => handler(e.payload)),
-  listInputs: () => invoke<InputView[]>("list_inputs"),
-  saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
-  setObsPassword: (password: string | null) => invoke<void>("set_obs_password", { password }),
-  onFrame: (handler: (f: { key: string; image: string }) => void) =>
-    listen<{ key: string; image: string }>("frame", (e) => handler(e.payload)),
-  onState: (handler: (s: Snapshot) => void) => listen<Snapshot>("state", (e) => handler(e.payload)),
+  version: () => (inTauri ? getVersion() : Promise.resolve("dev")),
+  getSnapshot: () => call<Snapshot>("get_snapshot"),
+  launchScene: (scene: string) => call<void>("launch_scene", { scene }),
+  goBack: () => call<void>("go_back"),
+  switchCamera: (cameraId: string) => call<void>("switch_camera", { cameraId }),
+  toggleMic: () => call<void>("toggle_mic"),
+  startStream: () => call<void>("start_stream"),
+  stopStream: () => call<void>("stop_stream"),
+  watchPreviews: (interest: Interest) => call<void>("watch_previews", { interest }),
+  setSourceEnabled: (id: number, enabled: boolean) => call<void>("set_source_enabled", { id, enabled }),
+  listInputs: () => call<InputView[]>("list_inputs"),
+  saveSettings: (settings: Settings) => call<void>("save_settings", { settings }),
+  setObsPassword: (password: string | null) => call<void>("set_obs_password", { password }),
+  getPanelStatus: () => call<PanelStatus>("get_panel_status"),
+  setPanelPassword: (password: string | null) => call<void>("set_panel_password", { password }),
+  revokeDevice: (id: string) => call<void>("revoke_device", { id }),
+  getAvatarStatus: () => call<AvatarStatus>("get_avatar_status"),
+  avatarPush: (frame: AvatarFrame) => call<void>("avatar_push", { frame }),
+  createAvatarSource: () => call<string>("create_avatar_source"),
+  onState: (h: (s: Snapshot) => void) => listen("state", h),
+  onFrame: (h: (f: { key: string; image: string }) => void) => listen("frame", h),
+  onPanel: (h: (s: PanelStatus) => void) => listen("panel", h),
+  onAvatar: (h: (s: AvatarStatus) => void) => listen("avatar", h),
 };

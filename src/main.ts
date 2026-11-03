@@ -1,520 +1,108 @@
-import { api, type InputView, type PanelStatus, type QuickScene, type Settings, type Snapshot } from "./api";
+import { api } from "./api";
+import { connected, goTab, notify, state, subscribe, type Tab } from "./state";
+import { $, esc, run, toast } from "./util";
+import { guardTracker, maybeAutostart, mountAvatar, updateAvatar } from "./views/avatar";
+import { applyFrame, mountLive, syncPreviews, updateLive } from "./views/live";
+import { mountMobile, renderPairingBanner, updateMobile } from "./views/mobile";
+import { enterSettings, mountSettings, updateSettings } from "./views/settings";
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-/** Todo texto que viene de OBS o de los ajustes pasa por aquí antes de ir a innerHTML. */
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-let snap: Snapshot | null = null;
-let panelStatus: PanelStatus | null = null;
+const TABS: Tab[] = ["live", "avatar", "mobile", "settings"];
 let confirmingStop = false;
 let confirmTimer: number | undefined;
-let toastTimer: number | undefined;
-
-// Ajustes: se edita una copia local y solo se guarda al pulsar «Guardar».
-let draft: Settings | null = null;
-let inputs: InputView[] = [];
-
-function toast(message: string) {
-  const el = $("toast");
-  el.textContent = message;
-  el.hidden = false;
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (el.hidden = true), 6000);
-}
-
-/** Ejecuta una acción y muestra el error, si lo hay, sin ventanas emergentes (RNF-6). */
-async function run(action: Promise<unknown>) {
-  try {
-    await action;
-  } catch (e) {
-    toast(String(e));
-  }
-}
-
-// ---------- Vista en directo ----------
+let shownTab: Tab | null = null;
 
 const connLabels = {
   connected: "Conectado a OBS",
   connecting: "Conectando con OBS…",
   reconnecting: "Esperando a OBS…",
-  disconnected: "Desconectado",
+  disconnected: "Sin conexión con OBS",
 } as const;
 
-function renderHeader(s: Snapshot) {
-  const { state, error } = s.connection;
+function renderHeader() {
+  const s = state.snap;
+  if (!s) return;
+  const { state: conn, error } = s.connection;
   const pill = $("connection");
-  pill.className = `pill ${state}`;
-  pill.innerHTML = esc(connLabels[state]) + (error && state !== "connected" ? `<small>${esc(error)}</small>` : "");
+  pill.className = `pill ${conn}`;
+  pill.innerHTML = `${esc(connLabels[conn])}${error && conn !== "connected" ? `<small title="${esc(error)}">${esc(error)}</small>` : ""}`;
 
-  const connected = state === "connected";
   const box = $("stream-control");
-  if (s.stream.active) {
-    box.innerHTML = confirmingStop
+  const html = s.stream.active
+    ? confirmingStop
       ? `<button class="danger" data-action="stop-stream">Confirmar: parar el directo</button>`
-      : `<button class="on" data-action="ask-stop">${s.stream.reconnecting ? "Reconectando… " : "● En directo · "}Parar</button>`;
-  } else {
-    box.innerHTML = `<button class="live" data-action="start-stream" ${connected ? "" : "disabled"}>Iniciar directo</button>`;
-  }
-  const mic = $<HTMLButtonElement>("mic-button");
-  mic.disabled = !connected || s.micMuted === null;
-  mic.className = s.micMuted ? "on" : "";
-  mic.textContent = s.micMuted === null ? "Micro (sin elegir)" : s.micMuted ? "🔇 Micro silenciado" : "🎙 Micro activo";
-  $<HTMLButtonElement>("back-button").disabled = !connected || !s.previousScene;
+      : `<button class="on-air" data-action="ask-stop">${s.stream.reconnecting ? "Reconectando… " : "● En directo · "}Parar</button>`
+    : `<button class="live" data-action="start-stream" ${connected() ? "" : "disabled"}>● Iniciar directo</button>`;
+  if (box.innerHTML !== html) box.innerHTML = html;
 }
 
-function renderQuick(s: Snapshot) {
-  const connected = s.connection.state === "connected";
-  const items = s.settings.quickScenes
-    .map((q) => {
-      const missing = s.scenes.length > 0 && !s.scenes.includes(q.scene);
-      const active = s.currentScene === q.scene;
-      const note = missing ? "no existe en OBS" : q.muteMic ? "silencia el micro" : "";
-      return `<button class="big ${active ? "active" : ""}" style="--c:${esc(q.color)}" data-action="launch" data-scene="${esc(q.scene)}" ${connected && !missing ? "" : "disabled"}>
-        <span class="icon">${esc(q.icon)}</span><span>${esc(q.label || q.scene)}</span>${note ? `<small>${note}</small>` : ""}
-      </button>`;
-    })
-    .join("");
-  $("quick").innerHTML =
-    items || `<p class="empty">Aún no hay escenas rápidas. Márcalas con ☆ en «Todas las escenas» o créalas en Ajustes.</p>`;
-}
-
-// Últimas capturas recibidas. Se guardan para que al repintar no parpadee la imagen.
-const frames = new Map<string, string>();
-
-function thumb(key: string, alt: string) {
-  const src = frames.get(key);
-  return `<div class="thumb ${src ? "" : "empty"}"><img data-frame="${esc(key)}" alt="${esc(alt)}" ${src ? `src="${src}"` : ""} /></div>`;
-}
-
-function applyFrame(key: string, image: string) {
-  frames.set(key, image);
-  document.querySelectorAll<HTMLImageElement>("img[data-frame]").forEach((img) => {
-    if (img.dataset.frame !== key) return;
-    img.src = image;
-    img.parentElement?.classList.remove("empty");
+function renderTabs() {
+  document.querySelectorAll<HTMLButtonElement>("#tabs button").forEach((b) => {
+    const on = b.dataset.tab === state.tab;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", String(on));
   });
+  const avatarLive = state.snap?.settings.avatar.enabled && state.tracker.kind !== "off";
+  document.querySelector<HTMLElement>('#tabs [data-tab="avatar"]')?.classList.toggle("active-dot", !!avatarLive);
 }
 
-function renderCameras(s: Snapshot) {
-  const connected = s.connection.state === "connected";
-  const items = s.cameras
-    .map(
-      (c) => `<button class="big cam ${c.active ? "active" : ""}" data-action="camera" data-id="${esc(c.id)}" ${connected && c.inScene ? "" : "disabled"}>
-        ${c.inScene ? thumb(c.source, c.name) : ""}<span>${esc(c.name)}</span><small>${c.inScene ? (c.active ? "en pantalla" : "disponible") : "no está en esta escena"}</small>
-      </button>`,
-    )
-    .join("");
-  $("cameras").innerHTML = items || `<p class="empty">Añade tus cámaras (fuentes de OBS) en Ajustes.</p>`;
-}
-
-function renderScenes(s: Snapshot) {
-  const connected = s.connection.state === "connected";
-  const query = $<HTMLInputElement>("search").value.trim().toLowerCase();
-  const quick = new Set(s.settings.quickScenes.map((q) => q.scene));
-  const rows = s.scenes
-    .filter((name) => name.toLowerCase().includes(query))
-    .map(
-      (name) => `<div class="scene-row">
-        <button class="name ${s.currentScene === name ? "active" : ""}" data-action="launch" data-scene="${esc(name)}" ${connected ? "" : "disabled"}>${esc(name)}</button>
-        <button class="star ${quick.has(name) ? "on" : ""}" data-action="toggle-quick" data-scene="${esc(name)}" title="${quick.has(name) ? "Quitar de escenas rápidas" : "Marcar como escena rápida"}">${quick.has(name) ? "★" : "☆"}</button>
-      </div>`,
-    )
-    .join("");
-  $("scenes").innerHTML = rows || `<p class="empty">${s.scenes.length ? "Ninguna escena coincide." : "OBS no ha enviado escenas todavía."}</p>`;
-}
-
-function renderSources(s: Snapshot) {
-  const connected = s.connection.state === "connected";
-  const items = s.sources
-    .map(
-      (x) => `<div class="source ${x.enabled ? "" : "off"}">
-        ${x.visual ? thumb(x.name, x.name) : `<div class="thumb audio">🔊</div>`}
-        <div class="meta">
-          <span class="name" title="${esc(x.name)}">${esc(x.name)}</span>
-          <button data-action="source" data-id="${x.id}" data-enabled="${x.enabled}" ${connected ? "" : "disabled"}>${x.enabled ? "Visible" : "Oculta"}</button>
-        </div>
-      </div>`,
-    )
-    .join("");
-  $("sources").innerHTML = items || `<p class="empty">La escena en programa no tiene fuentes.</p>`;
-}
-
-const pad = (n: number) => String(n).padStart(2, "0");
-const clock = (secs: number) => `${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)}`;
-const bitrate = (kbps: number) => (kbps >= 1000 ? `${(kbps / 1000).toFixed(1).replace(".", ",")} Mb/s` : `${kbps} kb/s`);
-
-function renderHealth(s: Snapshot) {
-  const h = s.health;
-  if (!h || s.connection.state !== "connected") {
-    $("health").innerHTML = `<p class="empty">Sin datos de OBS.</p>`;
-    return;
+function update() {
+  if (!state.snap) return;
+  if (state.tab !== shownTab) {
+    for (const t of TABS) $(`view-${t}`).hidden = t !== state.tab;
+    if (state.tab === "settings") enterSettings();
+    shownTab = state.tab;
+    syncPreviews();
   }
-  const lostPct = h.totalFrames > 0 ? (h.droppedFrames / h.totalFrames) * 100 : 0;
-  const level = (bad: boolean, warn: boolean) => (bad ? "bad" : warn ? "warn" : "");
-  const cells: [string, string, string][] = [
-    ["En directo", s.stream.active ? clock(h.durationSecs) : "—", s.stream.reconnecting ? "warn" : ""],
-    ["Bitrate", h.bitrateKbps != null ? bitrate(h.bitrateKbps) : "—", ""],
-    ["Perdidos", h.totalFrames > 0 ? `${lostPct.toFixed(1).replace(".", ",")} %` : "—", level(lostPct > 5, lostPct > 2)],
-    ["FPS", h.fps.toFixed(0), level(h.fps < 20, h.fps < 28)],
-    ["CPU de OBS", `${h.cpu.toFixed(0)} %`, level(h.cpu > 90, h.cpu > 75)],
-  ];
-  $("health").innerHTML = cells
-    .map(([label, value, lvl]) => `<div class="stat ${lvl}"><span>${label}</span><strong>${esc(value)}</strong></div>`)
-    .join("");
-}
-
-function render() {
-  if (!snap) return;
-  renderHeader(snap);
-  renderQuick(snap);
-  renderCameras(snap);
-  renderSources(snap);
-  renderHealth(snap);
-  renderScenes(snap);
-  $("program-label").textContent = snap.currentScene ?? "";
-  syncPreviews();
-}
-
-/** Solo se piden capturas a OBS mientras la ventana se ve y no se están editando los ajustes. */
-let lastInterest = "";
-function syncPreviews() {
-  const watching = !document.hidden && !draft && snap?.connection.state === "connected";
-  const interest = {
-    program: !!watching,
-    sources: watching && snap ? snap.sources.filter((x) => x.visual).map((x) => x.name) : [],
-  };
-  const key = JSON.stringify(interest);
-  if (key === lastInterest) return;
-  lastInterest = key;
-  void run(api.watchPreviews(interest));
-}
-
-function toggleQuick(scene: string) {
-  if (!snap) return;
-  const settings = structuredClone(snap.settings);
-  const at = settings.quickScenes.findIndex((q) => q.scene === scene);
-  if (at >= 0) settings.quickScenes.splice(at, 1);
-  else settings.quickScenes.push({ scene, label: scene, color: "#3b82f6", icon: "▶", muteMic: false });
-  return run(api.saveSettings(settings));
-}
-
-// ---------- Ajustes ----------
-
-function field(label: string, control: string) {
-  return `<label>${label}${control}</label>`;
-}
-
-function renderSettings() {
-  if (!draft || !snap) return;
-  const d = draft;
-  const inputOptions = (selected: string | null) =>
-    `<option value="">(ninguno)</option>` +
-    inputs.map((i) => `<option value="${esc(i.name)}" ${i.name === selected ? "selected" : ""}>${esc(i.name)}</option>`).join("") +
-    (selected && !inputs.some((i) => i.name === selected) ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : "");
-
-  const sourceList = `<datalist id="sources">${inputs.map((i) => `<option value="${esc(i.name)}">`).join("")}</datalist>`;
-  const sceneList = `<datalist id="scene-names">${snap.scenes.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>`;
-
-  $("settings-form").innerHTML = `<div class="form">
-    <div class="card">
-      <h3>Conexión con OBS</h3>
-      <p>En OBS: Herramientas → Ajustes del servidor WebSocket (OBS 28 o superior). Puerto por defecto: 4455.</p>
-      <div class="row">
-        ${field("Dirección", `<input type="text" data-bind="host" value="${esc(d.obs.host)}" />`)}
-        ${field("Puerto", `<input type="number" min="1" max="65535" data-bind="port" value="${d.obs.port}" />`)}
-        ${field(
-          "Contraseña",
-          `<input type="password" id="password" autocomplete="off" placeholder="${snap.hasPassword ? "Guardada en el sistema" : "Sin contraseña"}" />`,
-        )}
-        <button data-action="save-password">Guardar contraseña</button>
-        ${snap.hasPassword ? `<button data-action="clear-password" class="ghost">Borrar</button>` : ""}
-      </div>
-      <p>La contraseña se guarda en el almacén seguro del sistema, nunca en el archivo de ajustes.</p>
-    </div>
-
-    <div class="card">
-      <h3>Panel web para el móvil</h3>
-      <p>Controla el directo desde el móvil o desde otro ordenador, solo dentro de tu red local: sin nube ni cuentas. El PC debe estar encendido con OBS abierto. Los cambios de esta tarjeta se aplican al pulsar «Guardar».</p>
-      <div class="row">
-        <label class="inline"><input type="checkbox" data-bind="panelEnabled" ${d.panel.enabled ? "checked" : ""} /> Activar el panel</label>
-        ${field("Puerto", `<input type="number" min="1024" max="65535" data-bind="panelPort" value="${d.panel.port}" />`)}
-      </div>
-      <div class="row">
-        <label class="inline"><input type="checkbox" data-bind="panelStream" ${d.panel.allowStreamControl ? "checked" : ""} /> Permitir iniciar y parar el directo desde el panel (con confirmación en dos pasos)</label>
-      </div>
-      <div class="row">
-        <label class="inline"><input type="checkbox" data-bind="panelOnlyQuick" ${d.panel.onlyQuickScenes ? "checked" : ""} /> El panel solo puede lanzar escenas rápidas</label>
-      </div>
-      <div class="row">
-        ${field("Contraseña del panel (mínimo 8 caracteres)", `<input type="password" id="panel-password" autocomplete="off" placeholder="${panelStatus?.hasPassword ? "Guardada en el sistema" : "Aún sin contraseña"}" />`)}
-        <button data-action="save-panel-password">Guardar contraseña</button>
-        ${panelStatus?.hasPassword ? `<button data-action="clear-panel-password" class="ghost">Borrar</button>` : ""}
-      </div>
-      <div id="panel-live"></div>
-    </div>
-
-    <div class="card">
-      <h3>Micro</h3>
-      <div class="row">
-        ${field("Entrada de audio de OBS", `<select data-bind="micInput">${inputOptions(d.micInput)}</select>`)}
-        <button data-action="refresh-inputs" class="ghost">Recargar lista de OBS</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Cámaras</h3>
-      <p>Cada cámara es una fuente de OBS dentro de la escena. Al cambiar, se muestra la nueva y después se oculta la anterior.</p>
-      ${d.cameras
-        .map(
-          (c, i) => `<div class="row">
-            ${field("Nombre", `<input type="text" data-cam="${i}" data-key="name" value="${esc(c.name)}" placeholder="Móvil" />`)}
-            ${field("Fuente en OBS", `<input type="text" list="sources" data-cam="${i}" data-key="source" value="${esc(c.source)}" />`)}
-            <button class="ghost" data-action="remove-camera" data-index="${i}">Quitar</button>
-          </div>`,
-        )
-        .join("")}
-      <div><button data-action="add-camera">+ Añadir cámara</button></div>
-      ${sourceList}
-    </div>
-
-    <div class="card">
-      <h3>Escenas rápidas</h3>
-      <p>Referencias por nombre a escenas que ya existen en OBS. «Silenciar micro» lo silencia al entrar y lo reactiva al salir.</p>
-      ${d.quickScenes
-        .map(
-          (q, i) => `<div class="row">
-            ${field("Escena de OBS", `<input type="text" list="scene-names" data-quick="${i}" data-key="scene" value="${esc(q.scene)}" />`)}
-            ${field("Nombre corto", `<input type="text" data-quick="${i}" data-key="label" value="${esc(q.label)}" />`)}
-            ${field("Icono", `<input type="text" size="3" data-quick="${i}" data-key="icon" value="${esc(q.icon)}" />`)}
-            ${field("Color", `<input type="color" data-quick="${i}" data-key="color" value="${esc(q.color)}" />`)}
-            <label class="inline"><input type="checkbox" data-quick="${i}" data-key="muteMic" ${q.muteMic ? "checked" : ""} /> Silenciar micro</label>
-            <button class="ghost" data-action="remove-quick" data-index="${i}">Quitar</button>
-          </div>`,
-        )
-        .join("")}
-      <div><button data-action="add-quick">+ Añadir escena rápida</button></div>
-      ${sceneList}
-    </div>
-  </div>`;
-  renderPanelLive();
-}
-
-const when = (secs: number) => new Date(secs * 1000).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "medium" });
-
-/** Parte viva de la tarjeta del panel: direcciones, dispositivos y registro. No toca los campos que se están editando. */
-function renderPanelLive() {
-  const host = document.getElementById("panel-live");
-  const p = panelStatus;
-  if (!host || !p) return;
-  const now = Date.now() / 1000;
-  const parts: string[] = [];
-
-  if (p.error) parts.push(`<p class="error">${esc(p.error)}</p>`);
-  if (p.enabled && !p.hasPassword) parts.push(`<p class="warn-text">Falta la contraseña: sin ella ningún móvil puede emparejarse.</p>`);
-  if (p.running) {
-    parts.push(`<div class="panel-url">
-      <div class="qr">${p.qrSvg ?? ""}</div>
-      <div>
-        <strong>Abre esta dirección en el móvil (misma Wi‑Fi):</strong>
-        ${p.urls.map((u) => `<code>${esc(u)}</code>`).join("") || `<code>No se encontró una IP de red local</code>`}
-        <p>La primera vez el navegador avisará de que el certificado no es de confianza (es propio de esta app): pulsa «Avanzado» y «Continuar». Después escribe la contraseña y el código de 6 dígitos que aparecerá aquí.</p>
-      </div>
-    </div>`);
-  } else if (p.enabled && !p.error) {
-    parts.push(`<p class="hint">Arrancando el panel…</p>`);
-  }
-
-  const pairings = p.pairings.filter((x) => x.expiresAt > now);
-  if (pairings.length) {
-    parts.push(`<h4>Emparejamientos pendientes</h4>` + pairings.map((x) => `<div class="pairing-row"><span>${esc(x.name)} <small>${esc(x.ip)}</small></span><b class="code">${esc(x.code)}</b></div>`).join(""));
-  }
-
-  parts.push(`<h4>Dispositivos emparejados</h4>`);
-  parts.push(
-    p.devices.length
-      ? p.devices
-          .map(
-            (d) => `<div class="device-row">
-              <span class="dot ${d.online ? "on" : ""}"></span>
-              <span class="grow">${esc(d.name)}<small>${d.online ? "conectado ahora" : "visto " + esc(when(d.lastSeen))} · ${esc(d.lastIp)}</small></span>
-              <button data-action="revoke" data-id="${esc(d.id)}">Revocar</button>
-            </div>`,
-          )
-          .join("")
-      : `<p class="hint">Ningún dispositivo emparejado.</p>`,
-  );
-
-  parts.push(`<h4>Registro de acciones</h4>`);
-  parts.push(
-    p.audit.length
-      ? `<div class="audit">${p.audit
-          .slice(0, 50)
-          .map((a) => `<div class="${a.ok ? "" : "fail"}"><time>${esc(when(a.at))}</time> <b>${esc(a.device)}</b> · ${esc(a.action)}: ${esc(a.detail)}</div>`)
-          .join("")}</div>`
-      : `<p class="hint">Sin acciones todavía.</p>`,
-  );
-  host.innerHTML = parts.join("");
-}
-
-/** Aviso en la vista principal para ver el código de un emparejamiento sin abrir los ajustes. */
-function renderPairingBanner() {
-  const box = $("pairing");
-  const now = Date.now() / 1000;
-  const pending = (panelStatus?.pairings ?? []).filter((x) => x.expiresAt > now);
-  box.hidden = pending.length === 0;
-  box.innerHTML = pending
-    .map((x) => `<span><b>${esc(x.name)}</b> quiere emparejarse. Código: <b class="code">${esc(x.code)}</b> <small>(caduca en ${Math.max(0, Math.round(x.expiresAt - now))} s)</small></span>`)
-    .join("");
-}
-
-setInterval(() => {
+  renderHeader();
+  renderTabs();
   renderPairingBanner();
-}, 1000);
-
-async function openSettings() {
-  if (!snap) return;
-  draft = structuredClone(snap.settings);
-  inputs = [];
-  $("live").hidden = true;
-  $("settings").hidden = false;
-  syncPreviews();
-  renderSettings();
-  await loadInputs(false);
-}
-
-async function loadInputs(report: boolean) {
-  try {
-    inputs = await api.listInputs();
-    renderSettings();
-  } catch (e) {
-    if (report) toast(String(e));
+  guardTracker();
+  maybeAutostart();
+  switch (state.tab) {
+    case "live": return updateLive();
+    case "avatar": return updateAvatar();
+    case "mobile": return updateMobile();
+    case "settings": return updateSettings();
   }
 }
-
-function closeSettings() {
-  draft = null;
-  $("settings").hidden = true;
-  $("live").hidden = false;
-  render();
-}
-
-function onSettingsInput(target: HTMLInputElement | HTMLSelectElement) {
-  if (!draft) return;
-  const d = draft;
-  const bind = target.dataset.bind;
-  if (bind === "host") d.obs.host = target.value;
-  else if (bind === "port") d.obs.port = Number(target.value);
-  else if (bind === "micInput") d.micInput = target.value || null;
-  else if (bind === "panelEnabled") d.panel.enabled = (target as HTMLInputElement).checked;
-  else if (bind === "panelPort") d.panel.port = Number(target.value);
-  else if (bind === "panelStream") d.panel.allowStreamControl = (target as HTMLInputElement).checked;
-  else if (bind === "panelOnlyQuick") d.panel.onlyQuickScenes = (target as HTMLInputElement).checked;
-
-  const key = target.dataset.key;
-  if (!key) return;
-  const value = target instanceof HTMLInputElement && target.type === "checkbox" ? target.checked : target.value;
-  if (target.dataset.cam !== undefined) {
-    (d.cameras[Number(target.dataset.cam)] as unknown as Record<string, unknown>)[key] = value;
-  } else if (target.dataset.quick !== undefined) {
-    (d.quickScenes[Number(target.dataset.quick)] as unknown as Record<string, unknown>)[key] = value;
-  }
-}
-
-// ---------- Eventos ----------
-
-document.addEventListener("input", (e) => {
-  const t = e.target as HTMLElement;
-  if (t.id === "search") return snap && renderScenes(snap);
-  if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement) onSettingsInput(t);
-});
 
 document.addEventListener("click", (e) => {
-  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-action]");
+  const el = (e.target as HTMLElement).closest<HTMLElement>("#tabs [data-tab], #stream-control [data-action]");
   if (!el) return;
-  const { action, scene, id } = el.dataset;
-  const index = Number(el.dataset.index);
-
-  switch (action) {
-    case "launch": return void run(api.launchScene(scene!));
-    case "back": return void run(api.goBack());
-    case "camera": return void run(api.switchCamera(id!));
-    case "mic": return void run(api.toggleMic());
-    case "toggle-quick": return void toggleQuick(scene!);
-    case "source": return void run(api.setSourceEnabled(Number(id), el.dataset.enabled !== "true"));
+  if (el.dataset.tab) return goTab(el.dataset.tab as Tab);
+  switch (el.dataset.action) {
     case "start-stream": return void run(api.startStream());
     case "ask-stop":
       // Confirmación en línea, sin ventana emergente que tape la pantalla (RF-26, RNF-6).
       confirmingStop = true;
       window.clearTimeout(confirmTimer);
-      confirmTimer = window.setTimeout(() => { confirmingStop = false; if (snap) renderHeader(snap); }, 4000);
-      return snap && renderHeader(snap);
+      confirmTimer = window.setTimeout(() => { confirmingStop = false; renderHeader(); }, 4000);
+      return renderHeader();
     case "stop-stream":
       confirmingStop = false;
       window.clearTimeout(confirmTimer);
       return void run(api.stopStream());
-    case "open-settings": return void openSettings();
-    case "close-settings": return closeSettings();
-    case "refresh-inputs": return void loadInputs(true);
-    case "add-camera": draft?.cameras.push({ id: "", name: "", source: "" }); return renderSettings();
-    case "remove-camera": draft?.cameras.splice(index, 1); return renderSettings();
-    case "add-quick": draft?.quickScenes.push({ scene: "", label: "", color: "#3b82f6", icon: "▶", muteMic: false } satisfies QuickScene); return renderSettings();
-    case "remove-quick": draft?.quickScenes.splice(index, 1); return renderSettings();
-    case "save-password": {
-      const input = $<HTMLInputElement>("password");
-      if (!input.value) return toast("Escribe la contraseña antes de guardarla");
-      const value = input.value;
-      input.value = "";
-      return void run(api.setObsPassword(value).then(renderSettings));
-    }
-    case "clear-password": return void run(api.setObsPassword(null).then(renderSettings));
-    case "save-panel-password": {
-      const input = $<HTMLInputElement>("panel-password");
-      if (!input.value) return toast("Escribe la contraseña del panel antes de guardarla");
-      const value = input.value;
-      input.value = "";
-      return void run(api.setPanelPassword(value).then(() => toast("Contraseña del panel guardada")));
-    }
-    case "clear-panel-password": return void run(api.setPanelPassword(null));
-    case "revoke": return void run(api.revokeDevice(id!));
-    case "save-settings":
-      if (!draft) return;
-      return void run(api.saveSettings(draft).then(closeSettings));
   }
 });
 
-function applyPanel(p: PanelStatus) {
-  const hadPassword = panelStatus?.hasPassword;
-  panelStatus = p;
-  renderPairingBanner();
-  if (!draft) return;
-  // Si cambia «hay contraseña» se repinta la tarjeta; si no, solo la parte viva.
-  if (hadPassword !== p.hasPassword) renderSettings();
-  else renderPanelLive();
-}
-
-function apply(s: Snapshot) {
-  snap = s;
-  if (draft) refreshSettingsIfPasswordChanged(s);
-  render();
-}
-
-// Si cambia «hay contraseña» mientras se editan ajustes, solo se refresca el aviso, no los campos.
-let lastHasPassword: boolean | null = null;
-function refreshSettingsIfPasswordChanged(s: Snapshot) {
-  if (lastHasPassword !== null && lastHasPassword !== s.hasPassword) renderSettings();
-  lastHasPassword = s.hasPassword;
-}
-
 document.addEventListener("visibilitychange", syncPreviews);
+setInterval(renderPairingBanner, 1000);
 
 async function main() {
+  mountLive($("view-live"));
+  mountAvatar($("view-avatar"));
+  mountMobile($("view-mobile"));
+  mountSettings($("view-settings"));
+  subscribe(update);
+
   await api.onFrame((f) => applyFrame(f.key, f.image));
-  await api.onPanel(applyPanel);
-  await api.onState(apply);
-  apply(await api.getSnapshot());
-  applyPanel(await api.getPanelStatus());
+  await api.onState((s) => { state.snap = s; notify(); });
+  await api.onPanel((p) => { state.panel = p; notify(); });
+  await api.onAvatar((a) => { state.avatar = a; notify(); });
+
+  [state.snap, state.panel, state.avatar, state.version] = await Promise.all([api.getSnapshot(), api.getPanelStatus(), api.getAvatarStatus(), api.version()]);
+  $("version").textContent = state.version === "dev" ? "modo prueba" : state.version ? `v${state.version}` : "";
+  notify();
 }
 
 main().catch((e) => toast(String(e)));
