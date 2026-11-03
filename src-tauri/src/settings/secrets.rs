@@ -4,6 +4,10 @@
 use std::{collections::HashMap, sync::Mutex};
 
 pub const OBS_PASSWORD_KEY: &str = "obs-password";
+/// Hash (Argon2) de la contraseña del panel web.
+pub const PANEL_PASSWORD_KEY: &str = "panel-password-hash";
+/// Clave privada del certificado HTTPS del panel.
+pub const PANEL_TLS_KEY: &str = "panel-tls-key";
 
 pub trait SecretStore: Send + Sync {
     fn get(&self, key: &str) -> Result<Option<String>, String>;

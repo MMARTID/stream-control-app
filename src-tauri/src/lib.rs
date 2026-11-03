@@ -2,6 +2,7 @@
 
 pub mod control;
 pub mod obs;
+pub mod panel;
 pub mod preview;
 pub mod settings;
 

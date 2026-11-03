@@ -57,10 +57,29 @@ pub struct Camera {
     pub source: String,
 }
 
+/// Panel web en la red local (RF-41 a RF-50). Desactivado hasta que el usuario lo activa.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PanelSettings {
+    pub enabled: bool,
+    pub port: u16,
+    /// RF-49: si es `false`, el panel no puede iniciar ni parar el stream.
+    pub allow_stream_control: bool,
+    /// Si es `true`, el panel solo lanza las escenas rápidas, no cualquier escena de OBS.
+    pub only_quick_scenes: bool,
+}
+
+impl Default for PanelSettings {
+    fn default() -> Self {
+        Self { enabled: false, port: 8443, allow_stream_control: false, only_quick_scenes: false }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub obs: ObsSettings,
+    pub panel: PanelSettings,
     /// Entrada de audio de OBS que se silencia con el botón del micro.
     pub mic_input: Option<String>,
     pub quick_scenes: Vec<QuickScene>,

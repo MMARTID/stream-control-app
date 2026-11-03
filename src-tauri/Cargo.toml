@@ -27,6 +27,13 @@ base64 = "0.23.1"
 thiserror = "2.0.21"
 uuid = { version = "1.29.0", features = ["v4"] }
 keyring = "4"
+axum = { version = "0.8.9", features = ["ws"] }
+axum-server = { version = "0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+argon2 = "0.6.0"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+if-addrs = "0.15.0"
 
 [profile.release]
 codegen-units = 1
@@ -36,4 +43,6 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
-tokio-tungstenite = "0.30.0"
+http-body-util = "0.1.5"
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+tower = { version = "0.5.3", features = ["util"] }

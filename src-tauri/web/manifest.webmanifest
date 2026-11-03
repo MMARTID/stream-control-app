@@ -1,0 +1,10 @@
+{
+  "name": "Stream Control",
+  "short_name": "Stream Control",
+  "description": "Control del directo en la red local",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

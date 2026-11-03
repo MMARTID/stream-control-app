@@ -538,6 +538,12 @@ fn validate(settings: &mut Settings) -> Result<(), String> {
     if settings.obs.port == 0 {
         return Err("El puerto de OBS no es válido".into());
     }
+    if settings.panel.port != 0 && settings.panel.port < 1024 {
+        return Err("El puerto del panel web debe ser 1024 o mayor".into());
+    }
+    if settings.panel.enabled && settings.panel.port == settings.obs.port {
+        return Err("El panel web y OBS no pueden usar el mismo puerto".into());
+    }
     let mut scenes = HashSet::new();
     for q in &mut settings.quick_scenes {
         if q.scene.trim().is_empty() {
