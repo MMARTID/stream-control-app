@@ -79,12 +79,29 @@ function renderQuick(s: Snapshot) {
     items || `<p class="empty">Aún no hay escenas rápidas. Márcalas con ☆ en «Todas las escenas» o créalas en Ajustes.</p>`;
 }
 
+// Últimas capturas recibidas. Se guardan para que al repintar no parpadee la imagen.
+const frames = new Map<string, string>();
+
+function thumb(key: string, alt: string) {
+  const src = frames.get(key);
+  return `<div class="thumb ${src ? "" : "empty"}"><img data-frame="${esc(key)}" alt="${esc(alt)}" ${src ? `src="${src}"` : ""} /></div>`;
+}
+
+function applyFrame(key: string, image: string) {
+  frames.set(key, image);
+  document.querySelectorAll<HTMLImageElement>("img[data-frame]").forEach((img) => {
+    if (img.dataset.frame !== key) return;
+    img.src = image;
+    img.parentElement?.classList.remove("empty");
+  });
+}
+
 function renderCameras(s: Snapshot) {
   const connected = s.connection.state === "connected";
   const items = s.cameras
     .map(
       (c) => `<button class="big cam ${c.active ? "active" : ""}" data-action="camera" data-id="${esc(c.id)}" ${connected && c.inScene ? "" : "disabled"}>
-        <span class="icon">📷</span><span>${esc(c.name)}</span><small>${c.inScene ? (c.active ? "en pantalla" : "disponible") : "no está en esta escena"}</small>
+        ${c.inScene ? thumb(c.source, c.name) : ""}<span>${esc(c.name)}</span><small>${c.inScene ? (c.active ? "en pantalla" : "disponible") : "no está en esta escena"}</small>
       </button>`,
     )
     .join("");
@@ -107,12 +124,70 @@ function renderScenes(s: Snapshot) {
   $("scenes").innerHTML = rows || `<p class="empty">${s.scenes.length ? "Ninguna escena coincide." : "OBS no ha enviado escenas todavía."}</p>`;
 }
 
+function renderSources(s: Snapshot) {
+  const connected = s.connection.state === "connected";
+  const items = s.sources
+    .map(
+      (x) => `<div class="source ${x.enabled ? "" : "off"}">
+        ${x.visual ? thumb(x.name, x.name) : `<div class="thumb audio">🔊</div>`}
+        <div class="meta">
+          <span class="name" title="${esc(x.name)}">${esc(x.name)}</span>
+          <button data-action="source" data-id="${x.id}" data-enabled="${x.enabled}" ${connected ? "" : "disabled"}>${x.enabled ? "Visible" : "Oculta"}</button>
+        </div>
+      </div>`,
+    )
+    .join("");
+  $("sources").innerHTML = items || `<p class="empty">La escena en programa no tiene fuentes.</p>`;
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const clock = (secs: number) => `${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)}`;
+const bitrate = (kbps: number) => (kbps >= 1000 ? `${(kbps / 1000).toFixed(1).replace(".", ",")} Mb/s` : `${kbps} kb/s`);
+
+function renderHealth(s: Snapshot) {
+  const h = s.health;
+  if (!h || s.connection.state !== "connected") {
+    $("health").innerHTML = `<p class="empty">Sin datos de OBS.</p>`;
+    return;
+  }
+  const lostPct = h.totalFrames > 0 ? (h.droppedFrames / h.totalFrames) * 100 : 0;
+  const level = (bad: boolean, warn: boolean) => (bad ? "bad" : warn ? "warn" : "");
+  const cells: [string, string, string][] = [
+    ["En directo", s.stream.active ? clock(h.durationSecs) : "—", s.stream.reconnecting ? "warn" : ""],
+    ["Bitrate", h.bitrateKbps != null ? bitrate(h.bitrateKbps) : "—", ""],
+    ["Perdidos", h.totalFrames > 0 ? `${lostPct.toFixed(1).replace(".", ",")} %` : "—", level(lostPct > 5, lostPct > 2)],
+    ["FPS", h.fps.toFixed(0), level(h.fps < 20, h.fps < 28)],
+    ["CPU de OBS", `${h.cpu.toFixed(0)} %`, level(h.cpu > 90, h.cpu > 75)],
+  ];
+  $("health").innerHTML = cells
+    .map(([label, value, lvl]) => `<div class="stat ${lvl}"><span>${label}</span><strong>${esc(value)}</strong></div>`)
+    .join("");
+}
+
 function render() {
   if (!snap) return;
   renderHeader(snap);
   renderQuick(snap);
   renderCameras(snap);
+  renderSources(snap);
+  renderHealth(snap);
   renderScenes(snap);
+  $("program-label").textContent = snap.currentScene ?? "";
+  syncPreviews();
+}
+
+/** Solo se piden capturas a OBS mientras la ventana se ve y no se están editando los ajustes. */
+let lastInterest = "";
+function syncPreviews() {
+  const watching = !document.hidden && !draft && snap?.connection.state === "connected";
+  const interest = {
+    program: !!watching,
+    sources: watching && snap ? snap.sources.filter((x) => x.visual).map((x) => x.name) : [],
+  };
+  const key = JSON.stringify(interest);
+  if (key === lastInterest) return;
+  lastInterest = key;
+  void run(api.watchPreviews(interest));
 }
 
 function toggleQuick(scene: string) {
@@ -209,6 +284,7 @@ async function openSettings() {
   inputs = [];
   $("live").hidden = true;
   $("settings").hidden = false;
+  syncPreviews();
   renderSettings();
   await loadInputs(false);
 }
@@ -267,6 +343,7 @@ document.addEventListener("click", (e) => {
     case "camera": return void run(api.switchCamera(id!));
     case "mic": return void run(api.toggleMic());
     case "toggle-quick": return void toggleQuick(scene!);
+    case "source": return void run(api.setSourceEnabled(Number(id), el.dataset.enabled !== "true"));
     case "start-stream": return void run(api.startStream());
     case "ask-stop":
       // Confirmación en línea, sin ventana emergente que tape la pantalla (RF-26, RNF-6).
@@ -312,7 +389,10 @@ function refreshSettingsIfPasswordChanged(s: Snapshot) {
   lastHasPassword = s.hasPassword;
 }
 
+document.addEventListener("visibilitychange", syncPreviews);
+
 async function main() {
+  await api.onFrame((f) => applyFrame(f.key, f.image));
   await api.onState(apply);
   apply(await api.getSnapshot());
 }

@@ -138,3 +138,56 @@ input[type="checkbox"] { width: 18px; height: 18px; }
 .row label.inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
 .row input[type="text"], .row input[type="number"], .row input[type="password"], .row select { min-width: 150px; }
 .row .grow { flex: 1; }
+
+/* Capturas y fuentes */
+.top { display: grid; grid-template-columns: minmax(280px, 560px) 1fr; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+
+.frame, .thumb {
+  position: relative;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+}
+.frame img, .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.frame img:not([src]), .thumb img:not([src]) { visibility: hidden; }
+.frame.empty::after, .thumb.empty::after {
+  content: "Sin imagen";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.frame .label {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  font-size: 12px;
+}
+.thumb.audio { display: grid; place-items: center; font-size: 22px; background: var(--panel-2); }
+.big .thumb { width: 100%; }
+
+.health { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+.stat span { color: var(--muted); font-size: 12px; }
+.stat strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.stat.warn { border-color: var(--warn); }
+.stat.warn strong { color: var(--warn); }
+.stat.bad { border-color: var(--bad); }
+.stat.bad strong { color: var(--bad); }
+
+.sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.source { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: grid; gap: 8px; }
+.source.off .thumb { opacity: 0.45; }
+.source .meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.source .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.source .meta button { padding: 4px 10px; font-size: 12px; }
+.source.off .meta button { color: var(--muted); }

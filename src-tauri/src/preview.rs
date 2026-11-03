@@ -104,6 +104,13 @@ impl PreviewHub {
         self.wake.notify_one();
     }
 
+    /// ¿Quiere `consumer` la captura con esta clave?
+    pub fn wants(&self, consumer: &str, key: &str) -> bool {
+        self.interests.lock().unwrap().get(consumer).is_some_and(|i| {
+            if key == PROGRAM_KEY { i.program } else { i.sources.iter().any(|s| s == key) }
+        })
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<Frame>> {
         self.frames.subscribe()
     }

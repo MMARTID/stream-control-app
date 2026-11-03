@@ -2,10 +2,12 @@
 
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
 use crate::{
     control::{Control, InputView, Snapshot},
+    preview::Interest,
     settings::{
         Settings, SettingsStore,
         secrets::KeyringStore,
@@ -13,6 +15,15 @@ use crate::{
 };
 
 type Ctl<'a> = State<'a, Arc<Control>>;
+
+/// Identificador de la ventana de escritorio como espectadora de capturas.
+const DESKTOP: &str = "desktop";
+
+#[derive(Clone, Serialize)]
+struct FramePayload {
+    key: String,
+    image: String,
+}
 
 #[tauri::command]
 fn get_snapshot(control: Ctl<'_>) -> Snapshot {
@@ -50,6 +61,16 @@ async fn stop_stream(control: Ctl<'_>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn watch_previews(control: Ctl<'_>, interest: Interest) {
+    control.watch_previews(DESKTOP, interest);
+}
+
+#[tauri::command]
+async fn set_source_enabled(control: Ctl<'_>, id: i64, enabled: bool) -> Result<(), String> {
+    control.set_source_enabled(id, enabled).await
+}
+
+#[tauri::command]
 async fn list_inputs(control: Ctl<'_>) -> Result<Vec<InputView>, String> {
     control.list_inputs().await
 }
@@ -81,6 +102,21 @@ pub fn run() {
                 }
             });
 
+            let mut frames = control.preview().subscribe();
+            let hub = Arc::clone(control.preview());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match frames.recv().await {
+                        Ok(frame) if hub.wants(DESKTOP, &frame.key) => {
+                            let _ = handle.emit("frame", FramePayload { key: frame.key.clone(), image: frame.image.clone() });
+                        }
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+
             app.manage(control);
             Ok(())
         })
@@ -93,6 +129,8 @@ pub fn run() {
             start_stream,
             stop_stream,
             list_inputs,
+            watch_previews,
+            set_source_enabled,
             save_settings,
             set_obs_password,
         ])

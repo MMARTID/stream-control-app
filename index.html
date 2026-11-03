@@ -19,6 +19,21 @@
     <div id="toast" class="toast" role="alert" hidden></div>
 
     <main id="live">
+      <section class="top">
+        <div>
+          <h2>Salida en programa</h2>
+          <div class="frame empty">
+            <img data-frame="@program" alt="Salida en programa" />
+            <span id="program-label" class="label"></span>
+          </div>
+          <p class="hint">Capturas de OBS (unas 3 por segundo), no vídeo en directo.</p>
+        </div>
+        <div>
+          <h2>Salud del directo</h2>
+          <div id="health" class="health"></div>
+        </div>
+      </section>
+
       <section>
         <div class="section-head">
           <h2>Escenas rápidas</h2>
@@ -33,6 +48,11 @@
       <section>
         <h2>Cámaras</h2>
         <div id="cameras" class="grid cameras"></div>
+      </section>
+
+      <section>
+        <h2>Fuentes de la escena</h2>
+        <div id="sources" class="sources"></div>
       </section>
 
       <section>

@@ -29,6 +29,31 @@ export interface CameraView extends CameraConfig {
   active: boolean;
 }
 
+export interface SourceView {
+  id: number;
+  name: string;
+  enabled: boolean;
+  visual: boolean;
+  kind: string | null;
+}
+
+export interface Health {
+  cpu: number;
+  fps: number;
+  bitrateKbps: number | null;
+  droppedFrames: number;
+  totalFrames: number;
+  renderSkippedFrames: number;
+  renderTotalFrames: number;
+  congestion: number;
+  durationSecs: number;
+}
+
+export interface Interest {
+  program: boolean;
+  sources: string[];
+}
+
 export interface Snapshot {
   connection: { state: ConnState; error: string | null };
   scenes: string[];
@@ -37,6 +62,8 @@ export interface Snapshot {
   stream: { active: boolean; reconnecting: boolean };
   micMuted: boolean | null;
   cameras: CameraView[];
+  sources: SourceView[];
+  health: Health | null;
   settings: Settings;
   hasPassword: boolean;
 }
@@ -54,8 +81,12 @@ export const api = {
   toggleMic: () => invoke<void>("toggle_mic"),
   startStream: () => invoke<void>("start_stream"),
   stopStream: () => invoke<void>("stop_stream"),
+  watchPreviews: (interest: Interest) => invoke<void>("watch_previews", { interest }),
+  setSourceEnabled: (id: number, enabled: boolean) => invoke<void>("set_source_enabled", { id, enabled }),
   listInputs: () => invoke<InputView[]>("list_inputs"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setObsPassword: (password: string | null) => invoke<void>("set_obs_password", { password }),
+  onFrame: (handler: (f: { key: string; image: string }) => void) =>
+    listen<{ key: string; image: string }>("frame", (e) => handler(e.payload)),
   onState: (handler: (s: Snapshot) => void) => listen<Snapshot>("state", (e) => handler(e.payload)),
 };
