@@ -1,18 +1,23 @@
 name: Build de Windows
 
-# Compila y prueba la app en Windows y deja el .exe portable y el instalador como artefactos
-# descargables. Se lanza a mano (Actions → «Build de Windows» → Run workflow) o al subir una etiqueta v*;
-# con una etiqueta (p. ej. v0.2.0) además publica una Release de GitHub con los dos archivos.
+# Prueba y compila la app en Windows y deja el .exe portable y el instalador como artefactos descargables.
+# Se lanza a mano (Actions → «Build de Windows» → Run workflow) o al subir una etiqueta v*; con una etiqueta
+# (p. ej. v0.2.0) además publica una Release de GitHub con los dos archivos.
+#
+# Las pruebas y la compilación van en trabajos separados que corren a la vez: el tiempo total es el del más
+# lento, no la suma. Los archivos aparecen en cuanto termina la compilación; la Release solo se publica si
+# también pasaron las pruebas.
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write # solo lo usa el paso de la Release; el resto del flujo no escribe en el repositorio
+  contents: read
 
 jobs:
-  windows:
+  pruebas:
+    name: Pruebas
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +39,7 @@ jobs:
       - name: Pruebas del seguimiento (funciones puras)
         run: npm test
 
-      # Pruebas contra el OBS simulado (cliente, núcleo, capturas, panel web con HTTPS real y avatar).
+      # Pruebas contra el OBS simulado (cliente, núcleo, capturas, panel web con HTTPS real, avatar y tiras LED).
       - name: Pruebas de Rust
         working-directory: src-tauri
         run: cargo test
@@ -44,6 +49,32 @@ jobs:
         working-directory: src-tauri
         continue-on-error: true
         run: cargo test keyring_real -- --ignored
+
+  compilar:
+    name: Compilar
+    runs-on: windows-latest
+    # Solo en CI: LTO «thin» y varias unidades de código compilan bastante más rápido que el perfil completo de
+    # Cargo.toml, a cambio de un .exe algo más grande. El perfil de Cargo.toml no se toca.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependencias de la interfaz
+        run: npm ci
 
       - name: Compilar la app (portable e instalador NSIS)
         run: npm run tauri build -- --bundles nsis
@@ -64,9 +95,20 @@ jobs:
           path: release/*
           if-no-files-found: error
 
-      - name: Publicar la Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  publicar:
+    name: Publicar la Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [pruebas, compilar]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stream-control-windows
+          path: release
+
+      - uses: softprops/action-gh-release@v2
         with:
           files: release/*
           generate_release_notes: true
