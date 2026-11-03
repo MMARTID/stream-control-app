@@ -12,6 +12,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html { background: var(--bg); }
 body {
   margin: 0;

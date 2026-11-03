@@ -244,6 +244,7 @@ function buildApp() {
   ui.programImg = h("img", { "data-frame": "@program", alt: "Salida en programa" });
   ui.programFrame = h("div", { class: "frame empty" }, ui.programImg, (ui.programLabel = h("span", { class: "label" })));
   ui.quick = h("div", { class: "grid" });
+  ui.quickEmpty = h("p", { class: "hint", text: "Aún no hay escenas rápidas. Créalas en la app de escritorio (Ajustes).", hidden: true });
   ui.cams = h("div", { class: "grid" });
   ui.camsSection = h("section", {}, h("h2", { text: "Cámaras" }), ui.cams);
   ui.health = h("div", { class: "stats" });
@@ -259,7 +260,7 @@ function buildApp() {
   ui.stream = h("button", { class: "act", onclick: onStream });
   ui.main = h("main", {},
     h("section", {}, ui.programFrame, h("p", { class: "hint", text: "Capturas de OBS, no vídeo en directo." })),
-    h("section", { class: "act" }, h("h2", { text: "Escenas rápidas" }), ui.quick),
+    h("section", { class: "act" }, h("h2", { text: "Escenas rápidas" }), ui.quick, ui.quickEmpty),
     ui.camsSection,
     h("section", {}, h("h2", { text: "Salud del directo" }), ui.health),
     ui.sourcesSection,
@@ -345,7 +346,7 @@ function render() {
       el.children[2].textContent = missing ? "no existe en OBS" : q.muteMic ? "silencia el micro" : "";
       el.disabled = missing;
     });
-  if (!s.quickScenes.length && !ui.quick.children.length) ui.quick.textContent = "";
+  ui.quickEmpty.hidden = s.quickScenes.length > 0;
 
   ui.camsSection.hidden = s.cameras.length === 0;
   reconcile(ui.cams, s.cameras, (c) => c.id,
@@ -385,7 +386,8 @@ function render() {
 
 function renderHealth() {
   const hl = state.health;
-  if (!hl || !state.obsConnected) { ui.health.textContent = "Sin datos de OBS."; return; }
+  if (!hl || !state.obsConnected) { ui.health.replaceChildren(document.createTextNode("Sin datos de OBS.")); return; }
+  for (const node of [...ui.health.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.remove();
   const lost = hl.totalFrames > 0 ? (hl.droppedFrames / hl.totalFrames) * 100 : 0;
   const lvl = (bad, warn) => (bad ? "bad" : warn ? "warn" : "");
   const cells = [

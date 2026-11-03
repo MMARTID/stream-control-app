@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::{
     control::{Control, InputView, Snapshot},
+    panel::{Panel, PanelStatus},
     preview::Interest,
     settings::{
         Settings, SettingsStore,
@@ -81,6 +82,25 @@ async fn save_settings(control: Ctl<'_>, settings: Settings) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn get_panel_status(panel: State<'_, Arc<Panel>>) -> PanelStatus {
+    panel.status()
+}
+
+/// Guarda la contraseña del panel web (nunca vuelve a la interfaz) o la borra si va vacía.
+#[tauri::command]
+fn set_panel_password(panel: State<'_, Arc<Panel>>, password: Option<String>) -> Result<(), String> {
+    match password.filter(|p| !p.is_empty()) {
+        Some(p) => panel.set_password(&p),
+        None => panel.clear_password(),
+    }
+}
+
+#[tauri::command]
+fn revoke_device(panel: State<'_, Arc<Panel>>, id: String) -> Result<(), String> {
+    panel.revoke_device(&id)
+}
+
+#[tauri::command]
 fn set_obs_password(control: Ctl<'_>, password: Option<String>) -> Result<(), String> {
     control.set_obs_password(password)
 }
@@ -91,7 +111,19 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             let store = SettingsStore::new(dir.join("settings.json"));
             let secrets = Arc::new(KeyringStore::new("app.streamcontrol.desktop"));
-            let control = tauri::async_runtime::block_on(async { Control::start(store, secrets) });
+            let control = tauri::async_runtime::block_on(async { Control::start(store, secrets.clone()) });
+            let panel = tauri::async_runtime::block_on(async {
+                Panel::start(Arc::clone(&control), dir.clone(), secrets.clone())
+            });
+
+            let mut panel_rx = panel.subscribe();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while panel_rx.changed().await.is_ok() {
+                    let status = panel_rx.borrow_and_update().clone();
+                    let _ = handle.emit("panel", status);
+                }
+            });
 
             let mut rx = control.subscribe();
             let handle = app.handle().clone();
@@ -118,6 +150,7 @@ pub fn run() {
             });
 
             app.manage(control);
+            app.manage(panel);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -133,6 +166,9 @@ pub fn run() {
             set_source_enabled,
             save_settings,
             set_obs_password,
+            get_panel_status,
+            set_panel_password,
+            revoke_device,
         ])
         .run(tauri::generate_context!())
         .expect("error al arrancar Stream Control");

@@ -1,4 +1,4 @@
-import { api, type InputView, type QuickScene, type Settings, type Snapshot } from "./api";
+import { api, type InputView, type PanelStatus, type QuickScene, type Settings, type Snapshot } from "./api";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -7,6 +7,7 @@ const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 let snap: Snapshot | null = null;
+let panelStatus: PanelStatus | null = null;
 let confirmingStop = false;
 let confirmTimer: number | undefined;
 let toastTimer: number | undefined;
@@ -234,6 +235,27 @@ function renderSettings() {
     </div>
 
     <div class="card">
+      <h3>Panel web para el móvil</h3>
+      <p>Controla el directo desde el móvil o desde otro ordenador, solo dentro de tu red local: sin nube ni cuentas. El PC debe estar encendido con OBS abierto. Los cambios de esta tarjeta se aplican al pulsar «Guardar».</p>
+      <div class="row">
+        <label class="inline"><input type="checkbox" data-bind="panelEnabled" ${d.panel.enabled ? "checked" : ""} /> Activar el panel</label>
+        ${field("Puerto", `<input type="number" min="1024" max="65535" data-bind="panelPort" value="${d.panel.port}" />`)}
+      </div>
+      <div class="row">
+        <label class="inline"><input type="checkbox" data-bind="panelStream" ${d.panel.allowStreamControl ? "checked" : ""} /> Permitir iniciar y parar el directo desde el panel (con confirmación en dos pasos)</label>
+      </div>
+      <div class="row">
+        <label class="inline"><input type="checkbox" data-bind="panelOnlyQuick" ${d.panel.onlyQuickScenes ? "checked" : ""} /> El panel solo puede lanzar escenas rápidas</label>
+      </div>
+      <div class="row">
+        ${field("Contraseña del panel (mínimo 8 caracteres)", `<input type="password" id="panel-password" autocomplete="off" placeholder="${panelStatus?.hasPassword ? "Guardada en el sistema" : "Aún sin contraseña"}" />`)}
+        <button data-action="save-panel-password">Guardar contraseña</button>
+        ${panelStatus?.hasPassword ? `<button data-action="clear-panel-password" class="ghost">Borrar</button>` : ""}
+      </div>
+      <div id="panel-live"></div>
+    </div>
+
+    <div class="card">
       <h3>Micro</h3>
       <div class="row">
         ${field("Entrada de audio de OBS", `<select data-bind="micInput">${inputOptions(d.micInput)}</select>`)}
@@ -276,7 +298,80 @@ function renderSettings() {
       ${sceneList}
     </div>
   </div>`;
+  renderPanelLive();
 }
+
+const when = (secs: number) => new Date(secs * 1000).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "medium" });
+
+/** Parte viva de la tarjeta del panel: direcciones, dispositivos y registro. No toca los campos que se están editando. */
+function renderPanelLive() {
+  const host = document.getElementById("panel-live");
+  const p = panelStatus;
+  if (!host || !p) return;
+  const now = Date.now() / 1000;
+  const parts: string[] = [];
+
+  if (p.error) parts.push(`<p class="error">${esc(p.error)}</p>`);
+  if (p.enabled && !p.hasPassword) parts.push(`<p class="warn-text">Falta la contraseña: sin ella ningún móvil puede emparejarse.</p>`);
+  if (p.running) {
+    parts.push(`<div class="panel-url">
+      <div class="qr">${p.qrSvg ?? ""}</div>
+      <div>
+        <strong>Abre esta dirección en el móvil (misma Wi‑Fi):</strong>
+        ${p.urls.map((u) => `<code>${esc(u)}</code>`).join("") || `<code>No se encontró una IP de red local</code>`}
+        <p>La primera vez el navegador avisará de que el certificado no es de confianza (es propio de esta app): pulsa «Avanzado» y «Continuar». Después escribe la contraseña y el código de 6 dígitos que aparecerá aquí.</p>
+      </div>
+    </div>`);
+  } else if (p.enabled && !p.error) {
+    parts.push(`<p class="hint">Arrancando el panel…</p>`);
+  }
+
+  const pairings = p.pairings.filter((x) => x.expiresAt > now);
+  if (pairings.length) {
+    parts.push(`<h4>Emparejamientos pendientes</h4>` + pairings.map((x) => `<div class="pairing-row"><span>${esc(x.name)} <small>${esc(x.ip)}</small></span><b class="code">${esc(x.code)}</b></div>`).join(""));
+  }
+
+  parts.push(`<h4>Dispositivos emparejados</h4>`);
+  parts.push(
+    p.devices.length
+      ? p.devices
+          .map(
+            (d) => `<div class="device-row">
+              <span class="dot ${d.online ? "on" : ""}"></span>
+              <span class="grow">${esc(d.name)}<small>${d.online ? "conectado ahora" : "visto " + esc(when(d.lastSeen))} · ${esc(d.lastIp)}</small></span>
+              <button data-action="revoke" data-id="${esc(d.id)}">Revocar</button>
+            </div>`,
+          )
+          .join("")
+      : `<p class="hint">Ningún dispositivo emparejado.</p>`,
+  );
+
+  parts.push(`<h4>Registro de acciones</h4>`);
+  parts.push(
+    p.audit.length
+      ? `<div class="audit">${p.audit
+          .slice(0, 50)
+          .map((a) => `<div class="${a.ok ? "" : "fail"}"><time>${esc(when(a.at))}</time> <b>${esc(a.device)}</b> · ${esc(a.action)}: ${esc(a.detail)}</div>`)
+          .join("")}</div>`
+      : `<p class="hint">Sin acciones todavía.</p>`,
+  );
+  host.innerHTML = parts.join("");
+}
+
+/** Aviso en la vista principal para ver el código de un emparejamiento sin abrir los ajustes. */
+function renderPairingBanner() {
+  const box = $("pairing");
+  const now = Date.now() / 1000;
+  const pending = (panelStatus?.pairings ?? []).filter((x) => x.expiresAt > now);
+  box.hidden = pending.length === 0;
+  box.innerHTML = pending
+    .map((x) => `<span><b>${esc(x.name)}</b> quiere emparejarse. Código: <b class="code">${esc(x.code)}</b> <small>(caduca en ${Math.max(0, Math.round(x.expiresAt - now))} s)</small></span>`)
+    .join("");
+}
+
+setInterval(() => {
+  renderPairingBanner();
+}, 1000);
 
 async function openSettings() {
   if (!snap) return;
@@ -312,6 +407,10 @@ function onSettingsInput(target: HTMLInputElement | HTMLSelectElement) {
   if (bind === "host") d.obs.host = target.value;
   else if (bind === "port") d.obs.port = Number(target.value);
   else if (bind === "micInput") d.micInput = target.value || null;
+  else if (bind === "panelEnabled") d.panel.enabled = (target as HTMLInputElement).checked;
+  else if (bind === "panelPort") d.panel.port = Number(target.value);
+  else if (bind === "panelStream") d.panel.allowStreamControl = (target as HTMLInputElement).checked;
+  else if (bind === "panelOnlyQuick") d.panel.onlyQuickScenes = (target as HTMLInputElement).checked;
 
   const key = target.dataset.key;
   if (!key) return;
@@ -370,11 +469,30 @@ document.addEventListener("click", (e) => {
       return void run(api.setObsPassword(value).then(renderSettings));
     }
     case "clear-password": return void run(api.setObsPassword(null).then(renderSettings));
+    case "save-panel-password": {
+      const input = $<HTMLInputElement>("panel-password");
+      if (!input.value) return toast("Escribe la contraseña del panel antes de guardarla");
+      const value = input.value;
+      input.value = "";
+      return void run(api.setPanelPassword(value).then(() => toast("Contraseña del panel guardada")));
+    }
+    case "clear-panel-password": return void run(api.setPanelPassword(null));
+    case "revoke": return void run(api.revokeDevice(id!));
     case "save-settings":
       if (!draft) return;
       return void run(api.saveSettings(draft).then(closeSettings));
   }
 });
+
+function applyPanel(p: PanelStatus) {
+  const hadPassword = panelStatus?.hasPassword;
+  panelStatus = p;
+  renderPairingBanner();
+  if (!draft) return;
+  // Si cambia «hay contraseña» se repinta la tarjeta; si no, solo la parte viva.
+  if (hadPassword !== p.hasPassword) renderSettings();
+  else renderPanelLive();
+}
 
 function apply(s: Snapshot) {
   snap = s;
@@ -393,8 +511,10 @@ document.addEventListener("visibilitychange", syncPreviews);
 
 async function main() {
   await api.onFrame((f) => applyFrame(f.key, f.image));
+  await api.onPanel(applyPanel);
   await api.onState(apply);
   apply(await api.getSnapshot());
+  applyPanel(await api.getPanelStatus());
 }
 
 main().catch((e) => toast(String(e)));

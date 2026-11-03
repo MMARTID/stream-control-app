@@ -3,7 +3,7 @@
 //! Nombres de petición y campos comprobados contra docs/generated/protocol.md de
 //! obsproject/obs-websocket: GetVersion, GetSceneList, SetCurrentProgramScene,
 //! GetInputList, GetInputMute, SetInputMute, GetSceneItemList, SetSceneItemEnabled,
-//! GetStreamStatus, StartStream y StopStream.
+//! GetStreamStatus, StartStream, StopStream, GetStats y GetSourceScreenshot.
 
 use serde_json::{Value, json};
 
