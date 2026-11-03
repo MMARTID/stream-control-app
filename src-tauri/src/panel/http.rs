@@ -163,9 +163,16 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
 async fn guard(
     State(shared): State<Arc<Shared>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> Response {
+    // Con HTTP/2 (lo que usan los navegadores sobre HTTPS) no hay cabecera `Host`: la dirección va en
+    // `:authority` y llega en la URI. Se copia a `Host` para que todas las comprobaciones vean lo mismo.
+    if !req.headers().contains_key(header::HOST) {
+        if let Some(value) = req.uri().authority().and_then(|a| header::HeaderValue::from_str(a.as_str()).ok()) {
+            req.headers_mut().insert(header::HOST, value);
+        }
+    }
     if !is_lan(addr.ip()) {
         return error(StatusCode::FORBIDDEN, "El panel solo está disponible en la red local");
     }
