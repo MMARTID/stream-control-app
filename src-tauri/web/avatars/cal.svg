@@ -1,83 +1,59 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 440" role="img" aria-label="Avatar Cal">
   <!--
     Personaje de Stream Control. Convenciones para sustituirlo por otro dibujo (lienzo 400×440):
-    #avatar-body (balanceo), #avatar-head (giro/inclinación, eje en 200,300), #avatar-face (rasgos),
-    #eye-l/#eye-r (parpadeo, con data-cx/data-cy), #pupil-l/#pupil-r, #brow-l/#brow-r, y la boca
-    (centro 200,250): #mouth-lips (opcional), #mouth-cavity, #mouth-clip-path, #mouth-line,
-    #mouth-teeth, #mouth-tongue.
-    Dibujo propio en estilo de caricatura realista, inspirado en el aspecto de personajes de GTA VI.
-    No es arte oficial de Rockstar Games ni de Take-Two.
+    #avatar-body (balanceo), #avatar-head (giro/inclinación, eje en 200,300), #avatar-face (rasgos;
+    se desplaza al girar), #eye-l/#eye-r (parpadeo; data-cx/data-cy y contenido en coordenadas
+    locales centradas en 0,0), #pupil-l/#pupil-r (mirada), #brow-l/#brow-r, y la boca (centro
+    200,250, la dibuja avatar.js): #mouth-lips y #mouth-shade (opcionales), #mouth-cavity,
+    #mouth-clip-path, #mouth-line, #mouth-teeth, #mouth-tongue. Opcional: #avatar-jaw (barbilla
+    y barba; se estira hacia abajo al abrir la boca desde data-pivot hasta data-chin).
+    Dibujo propio, inspirado en el aspecto de personajes de GTA VI. No es arte oficial de
+    Rockstar Games ni de Take-Two.
   -->
-  <defs>
-    <clipPath id="mouth-clip"><path id="mouth-clip-path" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z"/></clipPath>
-    <clipPath id="face-clip"><path d="M 100 168 C 100 98, 146 64, 200 64 C 254 64, 300 98, 300 168 C 300 236, 262 294, 200 296 C 138 294, 100 236, 100 168 Z"/></clipPath>
-    <radialGradient id="skin" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#f0c6a0"/><stop offset=".6" stop-color="#e2b088"/><stop offset="1" stop-color="#bd8860"/></radialGradient>
-  </defs>
-  <g id="avatar-body">
-    <path d="M 6 440 C 8 366, 86 314, 200 314 C 314 314, 392 366, 394 440 Z" fill="#e2b088" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-    <g opacity=".9" stroke="#2b3b52" stroke-linecap="round" stroke-linejoin="round" fill="none">
-      <path d="M 352 392 q 12 -16 24 0 q -12 16 -24 0 Z" stroke-width="4"/><path d="M 364 380 v 40 M 354 408 q 10 12 20 0" stroke-width="4"/>
-      <path d="M 340 424 q 8 -6 16 0 t 16 0 t 16 0" stroke-width="4"/>
-      <path d="M 372 358 l 6 10 l 11 1 l -8 8 l 2 11 l -10 -6 l -10 6 l 2 -11 l -8 -8 l 11 -1 Z" stroke-width="3"/>
-    </g>
-    <path d="M 52 440 C 48 390, 70 346, 132 328 L 162 322 Q 200 346 238 322 L 268 328 C 330 346, 352 390, 348 440 Z" fill="#3b4048" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-    <path d="M 164 326 Q 200 352 236 326" fill="none" stroke="#2a2e34" stroke-width="6" stroke-linecap="round"/>
-    <path d="M 70 420 Q 74 386 104 362 M 330 420 Q 326 386 296 362" fill="none" stroke="#4d535c" stroke-width="5" stroke-linecap="round" opacity=".7"/>
-    <g id="avatar-head" transform="rotate(0 200 300)">
-      <path d="M 150 266 L 140 326 Q 200 358 260 326 L 250 266 Z" fill="#bd8860" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-      <ellipse cx="102" cy="194" rx="12" ry="22" fill="#e2b088" stroke="#1a0f0a" stroke-width="3.5"/>
-      <ellipse cx="298" cy="194" rx="12" ry="22" fill="#e2b088" stroke="#1a0f0a" stroke-width="3.5"/>
-      <path d="M 106 120 L 100 176 L 116 170 L 120 124 Z M 294 120 L 300 176 L 284 170 L 280 124 Z" fill="#6b4a2f" stroke="#1a0f0a" stroke-width="3" stroke-linejoin="round"/>
-      <path id="face-shape" d="M 100 168 C 100 98, 146 64, 200 64 C 254 64, 300 98, 300 168 C 300 236, 262 294, 200 296 C 138 294, 100 236, 100 168 Z" fill="url(#skin)" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-      <g id="avatar-face">
-        <path d="M 104 172 C 106 236, 140 282, 188 298 C 148 276, 122 236, 118 172 Z" fill="#bd8860" opacity=".4"/>
-        <ellipse cx="136" cy="214" rx="26" ry="14" fill="#e4846d" opacity=".4"/>
-        <ellipse cx="264" cy="214" rx="26" ry="14" fill="#e4846d" opacity=".4"/>
-        <g id="eye-l" data-cx="150" data-cy="177" transform="translate(150 177)">
-          <ellipse rx="16" ry="11.5" fill="#f3efe8" stroke="#1a0f0a" stroke-width="3"/>
-          <g id="pupil-l">
-            <circle cx="0" cy="-0.5" r="10.0" fill="#5f6b3a"/>
-            <circle cx="0" cy="-0.5" r="6.0" fill="#0e0807"/>
-            <circle cx="-3" cy="-3.6" r="2.4" fill="#ffffff"/>
-          </g>
-          <path d="M -18 -1 Q 0 -24.150000000000002 18 -1" fill="none" stroke="#1a0f0a" stroke-width="4.2" stroke-linecap="round"/>
-        </g>
-        <g id="eye-r" data-cx="250" data-cy="177" transform="translate(250 177)">
-          <ellipse rx="16" ry="11.5" fill="#f3efe8" stroke="#1a0f0a" stroke-width="3"/>
-          <g id="pupil-r">
-            <circle cx="0" cy="-0.5" r="10.0" fill="#5f6b3a"/>
-            <circle cx="0" cy="-0.5" r="6.0" fill="#0e0807"/>
-            <circle cx="-3" cy="-3.6" r="2.4" fill="#ffffff"/>
-          </g>
-          <path d="M -18 -1 Q 0 -24.150000000000002 18 -1" fill="none" stroke="#1a0f0a" stroke-width="4.2" stroke-linecap="round"/>
-        </g>
-        <path d="M 132 190 Q 150 198 168 190 M 232 190 Q 250 198 268 190" fill="none" stroke="#bd8860" stroke-width="4" stroke-linecap="round" opacity=".55"/>
-        <path id="brow-l" d="M 120 156 Q 148 138 186 148 L 184 158 Q 152 150 126 166 Z" fill="#5a3a24" stroke="#5a3a24" stroke-width="3.5" stroke-linejoin="round"/>
-        <path id="brow-r" d="M 280 156 Q 252 138 214 148 L 216 158 Q 248 150 274 166 Z" fill="#5a3a24" stroke="#5a3a24" stroke-width="3.5" stroke-linejoin="round"/>
-        <ellipse cx="200" cy="214" rx="19" ry="13" fill="#e8957a" opacity=".6"/>
-        <path d="M 183 222 Q 200 233 217 222" fill="none" stroke="#1a0f0a" stroke-width="3.5" stroke-linecap="round" opacity=".8"/>
-        <ellipse cx="192" cy="224" rx="4.5" ry="2.8" fill="#2a130c" opacity=".5"/><ellipse cx="208" cy="224" rx="4.5" ry="2.8" fill="#2a130c" opacity=".5"/>
-        <g clip-path="url(#face-clip)">
-          <path d="M 98 176 C 96 246, 138 312, 200 318 C 262 312, 304 246, 302 176 C 290 208, 268 226, 244 232 C 230 226, 170 226, 156 232 C 132 226, 110 208, 98 176 Z" fill="#5a3a24" stroke="#1a0f0a" stroke-width="3" stroke-linejoin="round"/>
-          <path d="M 120 220 Q 132 262 168 288 M 280 220 Q 268 262 232 288 M 150 270 Q 200 304 250 270 M 108 200 Q 112 226 124 244 M 292 200 Q 288 226 276 244" fill="none" stroke="#7e5a3a" stroke-width="4" stroke-linecap="round" opacity=".75"/>
-        </g>
-        <path d="M 150 240 Q 178 224 200 234 Q 222 224 250 240 Q 224 252 200 247 Q 176 252 150 240 Z" fill="#5a3a24" stroke="#1a0f0a" stroke-width="3" stroke-linejoin="round"/>
-        <g id="mouth">
-          <path id="mouth-lips" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="none" stroke="#b66a5e" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
-          <path id="mouth-cavity" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="#4a121a" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-          <g clip-path="url(#mouth-clip)">
-            <rect id="mouth-teeth" x="168" y="242" width="64" height="0" fill="#f6f1e6"/>
-            <ellipse id="mouth-tongue" cx="200" cy="262" rx="16" ry="0" fill="#d4566e"/>
-          </g>
-          <path id="mouth-line" d="M 164 247.75 Q 200 255.75 236 247.75 Q 200 255.75 164 247.75 Z" fill="none" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-        </g>
-      </g>
-      <path d="M 104 130 C 110 100, 150 90, 200 90 C 250 90, 290 100, 296 130 Q 200 150 104 130 Z" fill="#000" opacity=".22" clip-path="url(#face-clip)"/>
-      <path d="M 120 124 C 120 74, 156 42, 200 42 C 244 42, 280 74, 280 124 Z" fill="#566b3a" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-      <path d="M 121 108 C 160 122, 240 122, 279 108 L 280 122 C 240 136, 160 136, 120 122 Z" fill="#3d4f2a" stroke="#1a0f0a" stroke-width="3" stroke-linejoin="round"/>
-      <path d="M 82 130 C 96 112, 150 116, 200 118 C 250 116, 304 112, 318 130 C 326 144, 298 152, 200 154 C 102 152, 74 144, 82 130 Z" fill="#657f44" stroke="#1a0f0a" stroke-width="3.5" stroke-linejoin="round"/>
-      <path d="M 94 134 C 130 142, 270 142, 306 134" fill="none" stroke="#3d4f2a" stroke-width="2.5" stroke-dasharray="6 6" opacity=".8"/>
-      <path d="M 140 62 Q 170 50 206 52 M 134 82 Q 162 72 190 74" fill="none" stroke="#7d9660" stroke-width="4" stroke-linecap="round" opacity=".6"/>
-    </g>
-  </g>
+<defs>
+<clipPath id="mouth-clip"><path id="mouth-clip-path" d="M 172.3 247.8 C 188.9 251.9 211.1 251.9 227.8 247.8 C 215.3 251.9 184.7 251.9 172.3 247.8 Z"/></clipPath>
+<clipPath id="face-clip"><path d="M 200 62 C 156 62 126 92 122 138 C 118 162 114 186 116 208 C 118 238 132 268 158 288 C 172 298 186 302 200 302 C 214 302 228 298 242 288 C 268 268 282 238 284 208 C 286 186 282 162 278 138 C 274 92 244 62 200 62 Z"/></clipPath>
+</defs>
+<g id="avatar-body">
+<path d="M 64 392 C 40 386 18 382 -2 382 L -2 442 L 54 442 C 56 420 58 404 64 392 Z" fill="#ebb995" stroke="#24160f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 336 392 C 360 386 382 382 402 382 L 402 442 L 346 442 C 344 420 342 404 336 392 Z" fill="#ebb995" stroke="#24160f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 62 394 C 58 404 56 420 54 440 L 42 440 C 44 420 47 406 52 393 Z" fill="#d09574"/><path d="M 338 394 C 342 404 344 420 346 440 L 358 440 C 356 420 353 406 348 393 Z" fill="#d09574"/><path d="M 352 414 C 362 400 382 398 396 408 C 388 412 382 418 384 430 C 376 422 364 420 352 414 Z" fill="#3d6b7d" stroke="#1d3846" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M 396 408 L 403 400 M 396 408 L 403 418" fill="none" stroke="#1d3846" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 360 410 L 348 400" fill="none" stroke="#1d3846" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 370 404 C 374 398 380 396 384 397" fill="none" stroke="#1d3846" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="364" cy="411" r="1.7" fill="#f3e3c3"/><path d="M 350 436 Q 358 430 366 436 T 382 436 T 398 436" fill="none" stroke="#2b5263" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 372 386 L 375 392 L 382 393 L 377 397 L 379 404 L 372 400 L 366 404 L 368 397 L 362 393 L 369 392 Z" fill="#b9483b" stroke="#1d3846" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 54 440 C 56 420 58 404 62 394 C 40 388 18 384 0 384 L 0 376 C 6 360 30 346 70 338 C 104 330 134 320 150 304 L 250 304 C 266 320 296 330 330 338 C 370 346 394 360 400 376 L 400 384 C 382 384 360 388 338 394 C 342 404 344 420 346 440 Z" fill="#353b46" stroke="#24160f" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M 250 304 C 266 320 296 330 330 338 C 360 344 386 356 398 372 L 398 384 C 380 385 358 389 338 394 C 342 404 344 420 346 440 L 270 440 C 280 400 274 350 250 304 Z" fill="#272c35"/><path d="M 70 346 C 100 338 124 330 140 318 C 120 336 96 348 70 356 Z" fill="#4a5260"/><path d="M 2 384 C 20 384 42 388 62 394 M 398 384 C 380 384 358 388 338 394" fill="none" stroke="#22262e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M 66 420 C 72 408 80 400 92 394 M 334 420 C 328 408 320 400 308 394" fill="none" stroke="#22262e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 150 304 C 168 322 232 322 250 304" fill="none" stroke="#2a2f38" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+<g id="avatar-head" transform="rotate(0 200 300)">
+<path d="M 156 250 L 152 318 L 248 318 L 244 250 Z" fill="#d09574"/><path d="M 112 132 C 108 150 110 170 116 186 L 128 180 C 124 166 124 150 128 136 Z M 288 132 C 292 150 290 170 284 186 L 272 180 C 276 166 276 150 272 136 Z" fill="#6b4527" stroke="#24160f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M 124 180 C 112 170 100 178 102 194 C 104 210 112 222 126 226 M 276 180 C 288 170 300 178 298 194 C 296 210 288 222 274 226" fill="#ebb995" stroke="#24160f" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 120 188 C 112 183 108 192 111 201 C 113 208 117 212 122 213 M 280 188 C 288 183 292 192 289 201 C 287 208 283 212 278 213" fill="none" stroke="#a86a50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 282 188 C 290 184 294 194 291 202 C 289 209 284 213 279 214 L 278 190 Z" fill="#d09574"/>
+<path d="M 200 62 C 156 62 126 92 122 138 C 118 162 114 186 116 208 C 118 238 132 268 158 288 C 172 298 186 302 200 302 C 214 302 228 298 242 288 C 268 268 282 238 284 208 C 286 186 282 162 278 138 C 274 92 244 62 200 62 Z" fill="#ebb995" stroke="#24160f" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+<g clip-path="url(#face-clip)"><path d="M 276 126 C 286 170 284 214 270 250 L 262 240 C 272 210 272 168 266 132 Z" fill="#d09574"/><path d="M 110 140 L 290 140 L 290 156 C 250 164 150 164 110 156 Z" fill="#d09574"/><path d="M 132 210 C 136 200 152 197 164 205 C 160 214 146 218 132 210 Z" fill="#e08a73" opacity=".6"/><path d="M 268 210 C 264 200 248 197 236 205 C 240 214 254 218 268 210 Z" fill="#d77d68" opacity=".6"/><path d="M 142 200 C 148 195 156 195 160 199 C 154 200 148 201 142 200 Z" fill="#f7d6b8"/></g>
+<g id="avatar-jaw" data-pivot="200" data-chin="336">
+<path d="M 124 168 Q 116.6 181.1 118 196 Q 110.6 208 112 222 Q 107.5 235 112 248 Q 110.6 262 118 274 Q 120 287.2 130 296 Q 134.6 308 146 314 Q 152.5 323.7 164 326 Q 171.4 333.7 182 333 Q 190.3 338.9 200 336 Q 209.7 338.9 218 333 Q 228.6 333.7 236 326 Q 247.5 323.7 254 314 Q 265.4 308 270 296 Q 280 287.2 282 274 Q 289.4 262 288 248 Q 292.5 235 288 222 Q 289.4 208 282 196 Q 283.4 181.1 276 168 L 276 168 C 274 186 270 202 260 214 C 252 222 242 226 232 232 C 222 238 212 238 200 238 C 188 238 178 238 168 232 C 158 226 148 222 140 214 C 130 202 126 186 124 168 Z" fill="#7a4a2a" stroke="#24160f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M 276 190 Q 275.6 207.1 284 222 Q 279.5 235 284 248 Q 276.6 260 278 274 Q 268 282.8 266 296 Q 254.6 302 250 314 Q 238.5 316.3 232 326 Q 221.4 325.3 214 333 Q 206.1 330.1 200 336 L 200 318 C 220 312 240 298 252 276 C 262 256 266 232 266 210 Z" fill="#5c361f"/><path d="M 122 232 C 124 260 134 284 152 302 C 140 282 132 258 130 232 Z" fill="#9b6236"/>
+<path d="M 130 226 C 134 252 146 276 166 296 M 148 232 C 152 258 164 282 184 300 M 270 226 C 266 252 254 276 234 296 M 252 232 C 248 258 236 282 216 300 M 178 300 C 186 312 194 318 200 322 M 222 300 C 214 312 206 318 200 322" fill="none" stroke="#5c361f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g clip-path="url(#face-clip)"><g id="avatar-face">
+<path d="M 176.6 175 C 184.4 179 185.9 186 183.6 193 C 181.3 187 178.2 182 172 179 Z" fill="#d09574"/><path d="M 151.8 181 C 158.8 176 172.8 175.5 179.7 182" fill="none" stroke="#a86a50" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/><path d="M 153.4 198 C 160.3 202 170.4 201.5 177.4 197" fill="none" stroke="#d09574" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/><path d="M 223.4 175 C 215.6 179 214.1 186 216.4 193 C 218.7 187 221.8 182 228 179 Z" fill="#d09574"/><path d="M 248.2 181 C 241.2 176 227.2 175.5 220.3 182" fill="none" stroke="#a86a50" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/><path d="M 246.6 198 C 239.7 202 229.6 201.5 222.6 197" fill="none" stroke="#d09574" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/><g id="eye-l" data-cx="165" data-cy="190" transform="translate(165 190)">
+<clipPath id="eye-l-clip"><path d="M -15.5 -0.5 C -8.5 -9 7 -8.5 15.5 1.5 C 7 6 -7.8 6.2 -15.5 -0.5 Z"/></clipPath>
+<path d="M -15.5 -0.5 C -8.5 -9 7 -8.5 15.5 1.5 C 7 6 -7.8 6.2 -15.5 -0.5 Z" fill="#f3eee6"/>
+<g clip-path="url(#eye-l-clip)"><g id="pupil-l"><circle cy="0.6" r="8.0" fill="#4a7390"/><path d="M -6.4 2.6 Q 0 9 6.4 2.6 Q 0 5 -6.4 2.6 Z" fill="#7aa2bb"/><circle cy="0.6" r="8.0" fill="none" stroke="#22384a" stroke-width="1.5"/><circle cy="0.6" r="3.5" fill="#120b08"/><circle cx="-2.9" cy="-2.6" r="2.1" fill="#fff"/><circle cx="2.8" cy="3" r="0.9" fill="#fff" opacity=".7"/></g>
+<path d="M -15.5 -0.5 C -8.5 -9 7 -8.5 15.5 1.5" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity=".2"/></g>
+<path d="M -15.5 0 C -7.8 6.2 4.6 6 11.6 4.1" fill="none" stroke="#a86a50" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+<path d="M -17.3 -1.2 C -8.5 -12 7 -10.7 16.1 0.8 C 7 -8.5 -8.5 -9 -15.5 -0.5 Z" fill="#24160f"/><path d="M -14.5 -2 L -20 -4.2 L -16 0.5 Z" fill="#24160f"/>
+<path d="M -15.5 -0.5 C -8.5 -9 7 -8.5 15.5 1.5" fill="none" stroke="#24160f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+</g><g id="eye-r" data-cx="235" data-cy="190" transform="translate(235 190)">
+<clipPath id="eye-r-clip"><path d="M 15.5 -0.5 C 8.5 -9 -7 -8.5 -15.5 1.5 C -7 6 7.8 6.2 15.5 -0.5 Z"/></clipPath>
+<path d="M 15.5 -0.5 C 8.5 -9 -7 -8.5 -15.5 1.5 C -7 6 7.8 6.2 15.5 -0.5 Z" fill="#f3eee6"/>
+<g clip-path="url(#eye-r-clip)"><g id="pupil-r"><circle cy="0.6" r="8.0" fill="#4a7390"/><path d="M -6.4 2.6 Q 0 9 6.4 2.6 Q 0 5 -6.4 2.6 Z" fill="#7aa2bb"/><circle cy="0.6" r="8.0" fill="none" stroke="#22384a" stroke-width="1.5"/><circle cy="0.6" r="3.5" fill="#120b08"/><circle cx="-2.9" cy="-2.6" r="2.1" fill="#fff"/><circle cx="2.8" cy="3" r="0.9" fill="#fff" opacity=".7"/></g>
+<path d="M 15.5 -0.5 C 8.5 -9 -7 -8.5 -15.5 1.5" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity=".2"/></g>
+<path d="M 15.5 0 C 7.8 6.2 -4.6 6 -11.6 4.1" fill="none" stroke="#a86a50" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+<path d="M 17.3 -1.2 C 8.5 -12 -7 -10.7 -16.1 0.8 C -7 -8.5 8.5 -9 15.5 -0.5 Z" fill="#24160f"/><path d="M 14.5 -2 L 20 -4.2 L 16 0.5 Z" fill="#24160f"/>
+<path d="M 15.5 -0.5 C 8.5 -9 -7 -8.5 -15.5 1.5" fill="none" stroke="#24160f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+</g>
+<g id="brow-l"><path d="M 188 175 C 177 171 159 169 140 175.5 C 139 174 140 173 142 171.5 C 153 160 171 159 186 164 C 190 166 191 173 188 175 Z" fill="#6b4429" stroke="#6b4429" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></g><g id="brow-r"><path d="M 212 175 C 223 171 241 169 260 175.5 C 261 174 260 173 258 171.5 C 247 160 229 159 214 164 C 210 166 209 173 212 175 Z" fill="#6b4429" stroke="#6b4429" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></g>
+<path d="M 185 233 Q 200 241 215 233 Q 200 237 185 233 Z" fill="#d09574"/><path d="M 203 190 C 206 204 208 214 214 222 C 210 223 206 226 203 229 C 205 216 204 206 201 192 Z" fill="#d09574"/><ellipse cx="200" cy="227" rx="12" ry="6" fill="#e39c84"/><path d="M 197.5 198 C 196 208 196 214 197.5 222 C 199.5 214 199.5 208 198.8 198 Z" fill="#f7d6b8"/><path d="M 197 225 Q 200 222 203 225 Q 200 227 197 225 Z" fill="#f7d6b8"/><path d="M 191 188 C 194 198 195 210 193.5 216" fill="none" stroke="#d09574" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/><path d="M 187 222 C 182.5 224 182 229 185 231" fill="none" stroke="#a86a50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 213 222 C 217.5 224 218 229 215 231" fill="none" stroke="#a86a50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M 190 232.5 C 192 230.5 195 231 196.5 233 C 193 233.5 192 234 190 232.5 Z M 210 232.5 C 208 230.5 205 231 203.5 233 C 207 233.5 208 234 210 232.5 Z" fill="#3a2017"/><path d="M 187 231 Q 200 237 213 231 Q 200 234 187 231 Z" fill="#a86a50" opacity=".55"/>
+<g id="mouth">
+<path id="mouth-shade" d="M 185 254.9 Q 200 262.4 215 254.9 Q 200 258.4 185 254.9 Z" fill="#4a2c1a"/>
+<path id="mouth-lips" d="M 170.3 247.8 C 184.7 247.4 189 244.9 194 245.4 Q 200 247.9 206 245.4 C 211 244.9 215.3 247.4 229.8 247.8 C 216.7 259.3 183.3 259.3 170.3 247.8 Z" fill="#c4786a"/>
+<path id="mouth-cavity" d="M 172.3 247.8 C 188.9 251.9 211.1 251.9 227.8 247.8 C 215.3 251.9 184.7 251.9 172.3 247.8 Z" fill="#3a1015"/>
+<g clip-path="url(#mouth-clip)"><rect id="mouth-teeth" x="176" y="249" width="48" height="0" rx="2.5" fill="#f4efe6"/><ellipse id="mouth-tongue" cx="200" cy="262" rx="18" ry="0" fill="#c4545f"/></g>
+<path id="mouth-line" d="M 172.3 247.8 C 188.9 251.9 211.1 251.9 227.8 247.8 C 215.3 251.9 184.7 251.9 172.3 247.8 Z M 173.3 247.8 Q 169.8 248.3 168.8 245.9 M 226.8 247.8 Q 230.3 248.3 231.3 245.9" fill="none" stroke="#24160f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M 156 258 Q 155.2 251.1 160 246 Q 163 239.3 170 237 Q 175.8 231.2 184 231 Q 192.4 229 200 233 Q 207.6 229 216 231 Q 224.2 231.2 230 237 Q 237 239.3 240 246 Q 244.8 251.1 244 258 Q 238 256 234 251 Q 227.6 251.2 222 248 Q 216.6 250 211 248.5 Q 205.6 250.5 200 249 Q 194.4 250.5 189 248.5 Q 183.4 250 178 248 Q 172.4 251.2 166 251 Q 162 256 156 258 Z" fill="#86522e" stroke="#4a2a17" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M 206 239 C 216 237 226 240 232 247 M 212 244 C 220 243 228 246 234 252" fill="none" stroke="#64391f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M 172 238 C 180 234 190 233 196 235" fill="none" stroke="#a56c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g></g>
+<path d="M 130 132 C 130 106 136 76 148 62 C 164 50 236 50 252 62 C 264 76 270 106 270 132 Z" fill="#68713f" stroke="#24160f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 238 54 C 262 70 270 104 270 132 L 248 132 C 250 104 248 78 238 54 Z" fill="#4f5630"/><path d="M 150 76 C 160 62 174 57 190 56 C 176 64 166 74 158 88 Z" fill="#858f58"/><path d="M 148 64 C 180 70 220 70 252 64" fill="none" stroke="#4f5630" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="152" cy="98" r="3.6" fill="#c9c09a" stroke="#24160f" stroke-width="1.6"/><circle cx="248" cy="98" r="3.6" fill="#a69d7a" stroke="#24160f" stroke-width="1.6"/><path d="M 130 114 C 170 124 230 124 270 114 L 270 130 C 230 140 170 140 130 130 Z" fill="#4c532e" stroke="#24160f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 90 146 C 96 130 150 128 200 128 C 250 128 304 130 310 146 C 314 156 300 160 286 158 C 260 154 236 152 200 152 C 164 152 140 154 114 158 C 100 160 86 156 90 146 Z" fill="#717b45" stroke="#24160f" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M 86 148 C 90 156 102 160 114 158 C 140 154 164 152 200 152 C 236 152 260 154 286 158 C 298 160 312 156 313 148 C 306 153 296 154 286 153 C 260 149 236 147 200 147 C 164 147 140 149 114 153 C 104 154 92 153 86 148 Z" fill="#4f5630"/><path d="M 100 144 C 112 136 156 135 200 135 C 244 135 288 136 300 144" fill="none" stroke="#4f5630" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 4"/><path d="M 256 132 C 284 133 302 136 308 144 C 298 142 280 140 256 140 Z" fill="#5d6638"/>
+</g>
+</g>
 </svg>

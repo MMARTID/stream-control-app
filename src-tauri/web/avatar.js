@@ -35,26 +35,38 @@ async function load(name) {
     body: $("avatar-body"), head: $("avatar-head"), face: $("avatar-face"),
     eyeL: $("eye-l"), eyeR: $("eye-r"), pupilL: $("pupil-l"), pupilR: $("pupil-r"),
     browL: $("brow-l"), browR: $("brow-r"),
-    lips: $("mouth-lips"), cavity: $("mouth-cavity"), clip: $("mouth-clip-path"), line: $("mouth-line"),
+    jaw: $("avatar-jaw"), lips: $("mouth-lips"), shade: $("mouth-shade"), cavity: $("mouth-cavity"), clip: $("mouth-clip-path"), line: $("mouth-line"),
     teeth: $("mouth-teeth"), tongue: $("mouth-tongue"),
   };
   loaded = name;
 }
 
-/** Boca: centro (200,250). `open` 0..1 abre la mandíbula; `smile` -1..1 sube o baja las comisuras. */
+/**
+ * Boca: centro (200,250). `open` 0..1 abre la mandíbula; `smile` -1..1 sube o baja las comisuras.
+ * `d` es el hueco (cavidad, recorte y contorno); `lips` los labios por fuera; `shade` la sombra
+ * bajo el labio inferior; `top`/`bot` los bordes interiores en el centro y `w` la media anchura.
+ */
 function mouthPath(open, smile) {
-  const w = 36 - 6 * open;
-  const corner = -smile * 9;
-  const top = corner + 6 + smile * 8 - open * 7;
-  const bottom = top + open * 50 * 1.9;
-  const x0 = (200 - w).toFixed(1), x1 = (200 + w).toFixed(1);
-  const cy = (250 + corner).toFixed(1);
-  return {
-    d: `M ${x0} ${cy} Q 200 ${(250 + top).toFixed(1)} ${x1} ${cy} Q 200 ${(250 + bottom).toFixed(1)} ${x0} ${cy} Z`,
-    topMid: 250 + (corner + top) / 2,
-    bottomMid: 250 + (corner + bottom) / 2,
-    w,
-  };
+  const f = (v) => v.toFixed(1);
+  const w = 27 + smile * 3 - open * 5;
+  const cy = 250 - smile * 9 + open * 1.5;
+  const top = 250.5 + smile * 1.5 - open * 3;
+  const bot = top + open * 27;
+  const L = 200 - w, R = 200 + w;
+  // Control de una cúbica simétrica cuyo punto medio cae a la altura m.
+  const c = (m) => f((4 * m - cy) / 3);
+  const d = `M ${f(L)} ${f(cy)} C ${f(200 - w * 0.4)} ${c(top)} ${f(200 + w * 0.4)} ${c(top)} ${f(R)} ${f(cy)} `
+    + `C ${f(200 + w * 0.55)} ${c(bot)} ${f(200 - w * 0.55)} ${c(bot)} ${f(L)} ${f(cy)} Z`;
+  // Pliegues de las comisuras: se curvan hacia arriba al sonreír y hacia abajo al entristecer.
+  const k = 1 + smile * 3.5;
+  const tucks = `M ${f(L + 1)} ${f(cy)} Q ${f(L - 2.5)} ${f(cy + 0.5)} ${f(L - 3.5)} ${f(cy - k)} `
+    + `M ${f(R - 1)} ${f(cy)} Q ${f(R + 2.5)} ${f(cy + 0.5)} ${f(R + 3.5)} ${f(cy - k)}`;
+  const ut = top - 4.5, lb = bot + 5.5;
+  const lips = `M ${f(L - 2)} ${f(cy)} C ${f(200 - w * 0.55)} ${f(ut + 1)} 189 ${f(ut - 1.5)} 194 ${f(ut - 1)} `
+    + `Q 200 ${f(ut + 1.5)} 206 ${f(ut - 1)} C 211 ${f(ut - 1.5)} ${f(200 + w * 0.55)} ${f(ut + 1)} ${f(R + 2)} ${f(cy)} `
+    + `C ${f(200 + w * 0.6)} ${c(lb)} ${f(200 - w * 0.6)} ${c(lb)} ${f(L - 2)} ${f(cy)} Z`;
+  const shade = `M 185 ${f(lb - 1.5)} Q 200 ${f(lb + 6)} 215 ${f(lb - 1.5)} Q 200 ${f(lb + 2)} 185 ${f(lb - 1.5)} Z`;
+  return { d, line: `${d} ${tucks}`, lips, shade, top, bot, w };
 }
 
 function applyPose(p, now) {
@@ -77,19 +89,28 @@ function applyPose(p, now) {
   parts.browL.setAttribute("transform", brow);
   parts.browR.setAttribute("transform", brow);
 
-  const m = mouthPath(clamp(p.mouth, 0, 1), clamp(p.smile, -1, 1));
-  parts.lips?.setAttribute("d", m.d);
+  const open = clamp(p.mouth, 0, 1);
+  const m = mouthPath(open, clamp(p.smile, -1, 1));
+  parts.lips?.setAttribute("d", m.lips);
+  parts.shade?.setAttribute("d", m.shade);
   parts.cavity.setAttribute("d", m.d);
   parts.clip.setAttribute("d", m.d);
-  parts.line.setAttribute("d", m.d);
-  const depth = m.bottomMid - m.topMid;
-  parts.teeth.setAttribute("x", (200 - m.w + 4).toFixed(1));
-  parts.teeth.setAttribute("width", (2 * m.w - 8).toFixed(1));
-  parts.teeth.setAttribute("y", (m.topMid - 6).toFixed(1));
-  parts.teeth.setAttribute("height", depth > 3 ? Math.min(depth * 0.4 + 6, 24).toFixed(1) : "0");
-  parts.tongue.setAttribute("cy", (m.bottomMid - 4).toFixed(1));
-  parts.tongue.setAttribute("rx", (14 + p.mouth * 8).toFixed(1));
-  parts.tongue.setAttribute("ry", depth > 6 ? Math.min(depth * 0.35, 14).toFixed(1) : "0");
+  parts.line.setAttribute("d", m.line);
+  const depth = m.bot - m.top;
+  parts.teeth.setAttribute("x", (200 - m.w * 0.8).toFixed(1));
+  parts.teeth.setAttribute("width", (m.w * 1.6).toFixed(1));
+  parts.teeth.setAttribute("y", (m.top - 2).toFixed(1));
+  parts.teeth.setAttribute("height", depth > 1.5 ? (Math.min(depth * 0.36, 6.5) + 2).toFixed(1) : "0");
+  parts.tongue.setAttribute("cy", (m.bot + 3).toFixed(1));
+  parts.tongue.setAttribute("rx", (m.w * 0.62).toFixed(1));
+  parts.tongue.setAttribute("ry", depth > 5 ? Math.min(depth * 0.36, 10).toFixed(1) : "0");
+  // Mandíbula opcional: estira hacia abajo la barbilla (y la barba) al abrir la boca.
+  if (parts.jaw) {
+    const pivot = Number(parts.jaw.dataset.pivot) || 200;
+    const chin = Number(parts.jaw.dataset.chin) || 300;
+    const s = 1 + (open * 10) / Math.max(chin - pivot, 20);
+    parts.jaw.setAttribute("transform", `translate(0 ${pivot}) scale(1 ${s.toFixed(4)}) translate(0 ${-pivot})`);
+  }
 }
 
 let last = performance.now();
