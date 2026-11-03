@@ -48,7 +48,7 @@ export async function askPermission(kind: "video" | "audio"): Promise<void> {
   stream.getTracks().forEach((t) => t.stop());
 }
 
-function friendlyError(e: unknown, mode: TrackerMode): string {
+export function friendlyError(e: unknown, mode: TrackerMode): string {
   const name = e instanceof DOMException ? e.name : "";
   const what = mode === "camera" ? "la cámara" : "el micrófono";
   if (name === "NotAllowedError" || name === "SecurityError") return `No hay permiso para usar ${what}. Permítelo en Windows (Configuración → Privacidad) y en el aviso de la app.`;

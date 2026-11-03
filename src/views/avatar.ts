@@ -1,7 +1,7 @@
 // Pestaña «Avatar»: un personaje que mueve la boca (y la cara) como tú. Se ve en OBS como fuente de navegador.
 import { api, type AvatarStatus } from "../api";
 import { decideFollow } from "../avatar/follow";
-import { AvatarTracker, askPermission, listDevices, type TrackerMode, type TrackerState } from "../avatar/tracker";
+import { AvatarTracker, askPermission, friendlyError, listDevices, type TrackerMode, type TrackerState } from "../avatar/tracker";
 import { connected, notify, state } from "../state";
 import { updateSettings } from "../ops";
 import { $, esc, run, store, toast } from "../util";
@@ -126,14 +126,22 @@ async function toggleEnabled(on: boolean) {
 }
 
 async function findDevices() {
+  let problem: unknown = null;
   try {
     await askPermission(current.mode === "camera" ? "video" : "audio");
-    [cameras, mics] = await Promise.all([listDevices("videoinput"), listDevices("audioinput")]);
-    signatures.delete("a-track");
-    updateAvatar();
   } catch (e) {
-    toast(e instanceof DOMException && e.name === "NotAllowedError" ? "No hay permiso para usar el dispositivo. Permítelo en Windows (Privacidad) y en el aviso de la app." : String(e));
+    problem = e;
   }
+  // Aunque falle el permiso (p. ej. la cámara está en uso), se listan los dispositivos que se vean:
+  // sin permiso no traen nombre, pero se pueden elegir.
+  try {
+    [cameras, mics] = await Promise.all([listDevices("videoinput"), listDevices("audioinput")]);
+  } catch {
+    /* sin lista: se queda la anterior */
+  }
+  signatures.delete("a-track");
+  updateAvatar();
+  if (problem) toast(friendlyError(problem, current.mode));
 }
 
 async function startTracking() {
