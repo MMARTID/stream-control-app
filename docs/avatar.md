@@ -36,7 +36,7 @@ cámara o micro ──► ventana de la app (MediaPipe en local) ──► núcl
 Son dibujos propios, en estilo de caricatura realista, **inspirados** en el aspecto de dos personajes masculinos de GTA VI:
 
 - **Jason**: pelo corto y oscuro, barba corta, físico atlético, camisa estampada abierta sobre camiseta blanca.
-- **Cal**: sombrero de pescador, barba grande, cara redonda y tatuajes en el brazo.
+- **Cal**: sombrero de pescador, barba grande y pelirroja, ojos azules y un tatuaje de un pez y una estrella en el brazo.
 
 Los rasgos salen de descripciones públicas del juego (rol, complexión, barba, sombrero, tatuajes en el brazo izquierdo, camisa estampada), **no de imágenes del juego**, que no he visto. Es una aproximación: para acercarlos más, pásale a Claude capturas de referencia de cada personaje y los retoca. No son arte oficial de Rockstar Games ni de Take-Two; si vas a emitir o repartir la app con ellos, valora tú el uso de la imagen de unos personajes con derechos de autor.
 
@@ -58,4 +58,4 @@ Comprobado:
 5. **La escena del avatar en OBS real.** La app usa `CreateScene`, `GetVideoSettings`, `CreateInput` (`browser_source`, con los ajustes `url`, `width`, `height`, `fps`), `CreateSceneItem`, `GetSceneItemTransform` y `SetSceneItemTransform`. La documentación de obs-websocket no detalla los campos de la transformación (`positionX`, `positionY`, `scaleX`, `scaleY`…) ni dice en qué orden devuelve `GetSceneItemList` las fuentes; se asume que los elementos nuevos nacen con el ancla arriba a la izquierda y que la lista va de abajo arriba. Si el avatar sale en otro sitio o la escena copiada tiene las fuentes en otro orden, es lo primero que hay que revisar. También: que el fondo sea transparente y se vea nítido.
 5b. **El seguimiento automático por escena**: que OBS suelte la cámara al salir de la escena (casilla «Desactivar cuando no se muestra») y el tiempo que tarda. Está probada la lógica de cuándo empezar y parar (7 pruebas), no con una cámara real.
 6. **El modo de voz con un micrófono real**: la sensibilidad y el aprendizaje del ruido de fondo se han probado solo con números.
-7. **macOS**: la cámara necesitaría un permiso en la configuración de la app (no está puesto).
+7. **macOS**: `src-tauri/Info.plist` declara los textos de permiso de cámara y micrófono, que Tauri incrusta en el modo desarrollo y en el paquete. Si la app se lanza desde otra aplicación (no desde la Terminal), macOS puede no mostrar el aviso de permiso. Sin probar con una cámara real.
