@@ -14,10 +14,10 @@ use tokio::{
 };
 
 use crate::{
-    obs::{ConnectionInfo, ConnectionState, ObsClient, ObsConfig, ObsError, protocol::ObsEvent},
+    obs::{ConnectionInfo, ConnectionState, ObsClient, ObsConfig, ObsError, api::SceneItem, protocol::ObsEvent},
     preview::{Interest, PreviewHub},
     settings::{
-        AVATAR_CHARACTERS, Settings, SettingsStore,
+        AVATAR_CHARACTERS, QuickScene, Settings, SettingsStore,
         secrets::{OBS_PASSWORD_KEY, SecretStore},
     },
 };
@@ -116,6 +116,48 @@ pub struct Control {
 
 /// Nombre de la fuente de navegador que crea la app en OBS.
 pub const AVATAR_SOURCE_NAME: &str = "Avatar (Stream Control)";
+/// La fuente de navegador mide 800 × 880 (la proporción de los dibujos, 400 × 440), con fondo transparente.
+const AVATAR_SOURCE_W: u32 = 800;
+const AVATAR_SOURCE_H: u32 = 880;
+/// El avatar ocupa esta fracción del alto del lienzo y queda a este margen del borde inferior e izquierdo.
+const AVATAR_HEIGHT_FRACTION: f64 = 0.34;
+const AVATAR_MARGIN_FRACTION: f64 = 0.02;
+
+/// Resultado de crear la escena del avatar.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarSceneReport {
+    pub scene: String,
+    /// Fuentes copiadas desde la escena de partida.
+    pub copied: usize,
+    /// Fuentes que no se pudieron copiar.
+    pub failed: Vec<String>,
+}
+
+/// Posición y escala para dejar el avatar abajo a la izquierda. Los elementos nuevos de OBS nacen con el
+/// ancla arriba a la izquierda, así que la posición es la de su esquina superior izquierda.
+fn avatar_transform(canvas_h: u32) -> Value {
+    let h = f64::from(canvas_h);
+    let shown_h = (h * AVATAR_HEIGHT_FRACTION).round();
+    let margin = (h * AVATAR_MARGIN_FRACTION).round();
+    let scale = shown_h / f64::from(AVATAR_SOURCE_H);
+    json!({ "positionX": margin, "positionY": h - margin - shown_h, "scaleX": scale, "scaleY": scale })
+}
+
+/// De la transformación que devuelve OBS, solo los campos que se pueden escribir (no el tamaño calculado).
+fn writable_transform(t: &Value) -> Value {
+    const KEYS: [&str; 14] = [
+        "positionX", "positionY", "rotation", "scaleX", "scaleY", "alignment", "boundsType", "boundsAlignment",
+        "boundsWidth", "boundsHeight", "cropLeft", "cropRight", "cropTop", "cropBottom",
+    ];
+    let mut out = serde_json::Map::new();
+    for key in KEYS {
+        if let Some(v) = t.get(key) {
+            out.insert(key.to_owned(), v.clone());
+        }
+    }
+    Value::Object(out)
+}
 
 fn msg(e: ObsError) -> String {
     e.to_string()
@@ -493,24 +535,97 @@ impl Control {
         Ok(inputs.into_iter().map(|i| InputView { name: i.name, kind: i.kind }).collect())
     }
 
-    /// Añade el avatar a la escena en programa como fuente de navegador de OBS.
+    /// Añade el avatar a la escena en programa como fuente de navegador de OBS, abajo a la izquierda.
     /// Solo se hace cuando el usuario pulsa el botón, nunca por su cuenta.
     pub async fn create_avatar_source(&self) -> Result<String, String> {
         let scene = self.current_scene().ok_or("No hay escena en programa")?;
+        let items = self.obs.get_scene_items(&scene).await.map_err(msg)?;
+        if items.iter().any(|i| i.source_name == AVATAR_SOURCE_NAME) {
+            return Err(format!("La escena «{scene}» ya tiene el avatar"));
+        }
+        let (_, canvas_h) = self.obs.get_canvas_size().await.map_err(msg)?;
+        self.add_avatar_item(&scene, canvas_h).await?;
+        Ok(scene)
+    }
+
+    /// Crea la escena del avatar (nombre en los ajustes, «Avatar» por defecto): el avatar abajo a la izquierda
+    /// en lugar de la cámara. Con `copy_sources`, copia las fuentes de la escena en programa **menos las cámaras**
+    /// (juego, marcos, textos…) con su posición y tamaño, para que sea la misma pantalla sin tu cara.
+    /// No toca ninguna escena que ya exista.
+    pub async fn create_avatar_scene(&self, copy_sources: bool, add_quick: bool) -> Result<AvatarSceneReport, String> {
+        let settings = self.settings();
+        let name = settings.avatar.scene.trim().to_owned();
+        if name.is_empty() {
+            return Err("Falta el nombre de la escena del avatar".into());
+        }
+        let exists = self.snapshot_tx.borrow().scenes.contains(&name);
+        if exists {
+            return Err(format!("Ya existe una escena «{name}» en OBS. Cámbiale el nombre o bórrala y vuelve a intentarlo"));
+        }
+        let origin = self.current_scene();
+        let (_, canvas_h) = self.obs.get_canvas_size().await.map_err(msg)?;
+
+        match self.obs.create_scene(&name).await {
+            Ok(()) => {}
+            Err(ObsError::Request { code: 601, .. }) => {
+                return Err(format!("Ya existe una escena «{name}» en OBS. Cámbiale el nombre o bórrala y vuelve a intentarlo"));
+            }
+            Err(e) => return Err(msg(e)),
+        }
+
+        let mut copied = 0;
+        let mut failed = Vec::new();
+        if let (true, Some(origin)) = (copy_sources, origin) {
+            let cameras: HashSet<&str> = settings.cameras.iter().map(|c| c.source.as_str()).collect();
+            let mut items = self.obs.get_scene_items(&origin).await.map_err(msg)?;
+            // De abajo arriba, para conservar el orden de apilado.
+            items.sort_by_key(|i| i.index.unwrap_or(i64::MAX));
+            for item in items.iter().filter(|i| !cameras.contains(i.source_name.as_str()) && i.source_name != AVATAR_SOURCE_NAME) {
+                match self.copy_item(&origin, item, &name).await {
+                    Ok(()) => copied += 1,
+                    Err(_) => failed.push(item.source_name.clone()),
+                }
+            }
+        }
+
+        self.add_avatar_item(&name, canvas_h).await?;
+
+        if add_quick && !settings.quick_scenes.iter().any(|q| q.scene == name) {
+            let mut next = self.settings();
+            next.quick_scenes.push(QuickScene {
+                scene: name.clone(),
+                label: "Avatar".into(),
+                color: "#a855f7".into(),
+                icon: "🎭".into(),
+                mute_mic: false,
+            });
+            self.save_settings(next).await?;
+        }
+        Ok(AvatarSceneReport { scene: name, copied, failed })
+    }
+
+    /// Copia un elemento a otra escena con su posición, tamaño y recorte.
+    async fn copy_item(&self, from: &str, item: &SceneItem, to: &str) -> Result<(), ObsError> {
+        let new_id = self.obs.create_scene_item(to, &item.source_name, item.enabled).await?;
+        let transform = self.obs.get_scene_item_transform(from, item.id).await?;
+        self.obs.set_scene_item_transform(to, new_id, writable_transform(&transform)).await
+    }
+
+    /// Pone la fuente de navegador del avatar en una escena, abajo a la izquierda. Si la entrada ya existe
+    /// en OBS (de una escena que se borró, por ejemplo), la reutiliza.
+    async fn add_avatar_item(&self, scene: &str, canvas_h: u32) -> Result<(), String> {
         let port = self.settings().avatar.port;
         let url = format!("http://127.0.0.1:{port}/avatar");
-        match self
-            .obs
-            .create_input(&scene, AVATAR_SOURCE_NAME, "browser_source", json!({ "url": url, "width": 800, "height": 800, "fps": 30 }))
-            .await
-        {
-            Ok(_) => Ok(scene),
+        let settings = json!({ "url": url, "width": AVATAR_SOURCE_W, "height": AVATAR_SOURCE_H, "fps": 30 });
+        let item = match self.obs.create_input(scene, AVATAR_SOURCE_NAME, "browser_source", settings).await {
+            Ok(id) => id,
             // 601 = ResourceAlreadyExists
             Err(ObsError::Request { code: 601, .. }) => {
-                Err(format!("Ya existe en OBS algo llamado «{AVATAR_SOURCE_NAME}». Añádelo a esta escena a mano o bórralo y vuelve a intentarlo"))
+                self.obs.create_scene_item(scene, AVATAR_SOURCE_NAME, true).await.map_err(msg)?
             }
-            Err(e) => Err(msg(e)),
-        }
+            Err(e) => return Err(msg(e)),
+        };
+        self.obs.set_scene_item_transform(scene, item, avatar_transform(canvas_h)).await.map_err(msg)
     }
 
     // ---- Ajustes ----
@@ -574,6 +689,9 @@ fn validate(settings: &mut Settings) -> Result<(), String> {
         && (settings.avatar.port == settings.obs.port || (settings.panel.enabled && settings.avatar.port == settings.panel.port))
     {
         return Err("El avatar necesita un puerto distinto al de OBS y al del panel web".into());
+    }
+    if settings.avatar.scene.trim().is_empty() || settings.avatar.scene.chars().count() > 100 {
+        return Err("El nombre de la escena del avatar no es válido (1 a 100 caracteres)".into());
     }
     if !AVATAR_CHARACTERS.contains(&settings.avatar.character.as_str()) {
         return Err("Ese personaje de avatar no existe".into());

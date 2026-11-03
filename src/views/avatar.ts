@@ -1,5 +1,6 @@
 // Pestaña «Avatar»: un personaje que mueve la boca (y la cara) como tú. Se ve en OBS como fuente de navegador.
 import { api, type AvatarStatus } from "../api";
+import { decideFollow } from "../avatar/follow";
 import { AvatarTracker, askPermission, listDevices, type TrackerMode, type TrackerState } from "../avatar/tracker";
 import { connected, notify, state } from "../state";
 import { updateSettings } from "../ops";
@@ -18,8 +19,15 @@ interface Prefs {
   mirror: boolean;
   invertPitch: boolean;
   autostart: boolean;
+  /** Seguir solo mientras la escena del avatar está en pantalla. */
+  followScene: boolean;
+  copySources: boolean;
+  addQuick: boolean;
 }
-const prefs = store<Prefs>("sc_avatar_prefs", { mode: "camera", cameraId: "", micId: "", sensitivity: 1, mirror: true, invertPitch: false, autostart: false });
+const prefs = store<Prefs>("sc_avatar_prefs", {
+  mode: "camera", cameraId: "", micId: "", sensitivity: 1, mirror: true, invertPitch: false, autostart: false,
+  followScene: true, copySources: true, addQuick: true,
+});
 let current: Prefs = prefs.get();
 
 const tracker = new AvatarTracker(
@@ -35,6 +43,11 @@ let mics: { id: string; label: string }[] = [];
 let root: HTMLElement;
 const signatures = new Map<string, string>();
 let autostarted = false;
+// Seguimiento automático según la escena en pantalla.
+let startedByFollow = false;
+let suppressed = false;
+let starting = false;
+let lastScene: string | null = null;
 
 /** Repinta un bloque solo si lo que lo define ha cambiado: así no se pierde el foco ni se corta un deslizador. */
 function section(id: string, signature: unknown, html: () => string) {
@@ -57,8 +70,8 @@ export function mountAvatar(el: HTMLElement) {
       <div class="steps-col">
         <section class="card" id="a-switch"></section>
         <section class="card" id="a-chars"></section>
-        <section class="card" id="a-track"></section>
         <section class="card" id="a-obs"></section>
+        <section class="card" id="a-track"></section>
       </div>
     </div>`;
 
@@ -69,11 +82,12 @@ export function mountAvatar(el: HTMLElement) {
       case "character": return void updateSettings((s) => (s.avatar.character = el.dataset.id!));
       case "mode": return setPrefs({ mode: el.dataset.mode as TrackerMode }, true);
       case "find-devices": return void findDevices();
-      case "start": return void startTracking();
-      case "stop": return void stopTracking();
+      case "start": startedByFollow = false; suppressed = false; return void startTracking();
+      case "stop": return void stopTracking(true);
+      case "create-scene": return void createScene();
+      case "create-source": return void createSource();
       case "calibrate": tracker.calibrate(); return toast("Calibrado: ahora «mirar al frente» es tu posición actual", "ok");
       case "copy": return void copy(el.dataset.text!);
-      case "create-source": return void createSource();
     }
   });
   root.addEventListener("change", (e) => {
@@ -85,6 +99,10 @@ export function mountAvatar(el: HTMLElement) {
       case "mirror": return setPrefs({ mirror: (t as HTMLInputElement).checked });
       case "invert-pitch": return setPrefs({ invertPitch: (t as HTMLInputElement).checked });
       case "autostart": return setPrefs({ autostart: (t as HTMLInputElement).checked });
+      case "follow": return setPrefs({ followScene: (t as HTMLInputElement).checked });
+      case "copy-sources": return setPrefs({ copySources: (t as HTMLInputElement).checked });
+      case "add-quick": return setPrefs({ addQuick: (t as HTMLInputElement).checked });
+      case "scene-name": return void updateSettings((s) => (s.avatar.scene = (t as HTMLInputElement).value.trim()), "Nombre de la escena guardado");
     }
   });
   root.addEventListener("input", (e) => {
@@ -133,8 +151,53 @@ async function startTracking() {
   }
 }
 
-async function stopTracking() {
+async function stopTracking(manual = false) {
+  // Si se para a mano con la escena del avatar en pantalla, el automático no lo vuelve a arrancar enseguida.
+  if (manual && state.snap?.currentScene === state.snap?.settings.avatar.scene) suppressed = true;
+  startedByFollow = false;
   await tracker.stop();
+}
+
+/** Arranca el seguimiento por la escena. Si la cámara aún la tiene OBS, reintenta unos segundos. */
+async function startFollow() {
+  starting = true;
+  startedByFollow = true;
+  try {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await startTracking();
+      if (tracker.state.kind !== "error") return;
+      const busy = /en uso/.test(tracker.state.message);
+      const stillOnAir = state.snap?.currentScene === state.snap?.settings.avatar.scene;
+      if (!busy || !stillOnAir) break;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    // No se vuelve a intentar hasta que cambie la escena; el motivo queda a la vista en el estado.
+    suppressed = true;
+    startedByFollow = false;
+  } finally {
+    starting = false;
+  }
+}
+
+function syncFollow() {
+  const snap = state.snap;
+  if (!snap) return;
+  const cfg = snap.settings.avatar;
+  if (snap.currentScene !== lastScene) {
+    lastScene = snap.currentScene;
+    suppressed = false;
+  }
+  const action = decideFollow({
+    follow: current.followScene,
+    ready: cfg.enabled && !!state.avatar?.running,
+    onAir: snap.currentScene === cfg.scene,
+    active: tracker.active,
+    startedByFollow,
+    suppressed,
+    starting,
+  });
+  if (action === "start") void startFollow();
+  else if (action === "stop") void stopTracking();
 }
 
 async function copy(text: string) {
@@ -148,12 +211,23 @@ async function copy(text: string) {
 
 async function createSource() {
   const scene = await run(api.createAvatarSource());
-  if (scene) toast(`Añadida la fuente «Avatar (Stream Control)» a la escena «${scene}». Colócala y ajusta su tamaño en OBS.`, "ok");
+  if (scene) toast(`Añadido el avatar a la escena «${scene}», abajo a la izquierda. Puedes moverlo y cambiarle el tamaño en OBS.`, "ok");
 }
 
-const trackerText = (st: TrackerState, mode: TrackerMode): { text: string; kind: string } => {
+async function createScene() {
+  const report = await run(api.createAvatarScene(current.copySources, current.addQuick));
+  if (!report) return;
+  const extra = report.copied ? ` con ${report.copied} fuente${report.copied === 1 ? "" : "s"} copiada${report.copied === 1 ? "" : "s"} (sin las cámaras)` : "";
+  const missing = report.failed.length ? ` No se pudieron copiar: ${report.failed.join(", ")}.` : "";
+  toast(`Escena «${report.scene}» creada en OBS${extra}. El avatar está abajo a la izquierda.${missing}`, "ok");
+}
+
+const trackerText = (st: TrackerState, mode: TrackerMode, waitingForScene: string | null): { text: string; kind: string } => {
   switch (st.kind) {
-    case "off": return { text: "Parado: el avatar se mueve solo (respira y parpadea).", kind: "" };
+    case "off":
+      return waitingForScene
+        ? { text: `En espera: el seguimiento empezará solo cuando pongas la escena «${waitingForScene}» en pantalla.`, kind: "wait" }
+        : { text: "Parado: el avatar se mueve solo (respira y parpadea).", kind: "" };
     case "starting": return { text: st.detail, kind: "wait" };
     case "tracking": return { text: mode === "camera" ? "Siguiendo tu cara ✓" : "Escuchando el micrófono ✓", kind: "ok" };
     case "no-face": return { text: "No veo tu cara. Colócate frente a la cámara con buena luz.", kind: "wait" };
@@ -195,12 +269,14 @@ export function updateAvatar(force = false) {
     <p class="hint">Dibujos propios, inspirados en el aspecto de personajes de GTA VI. No son arte oficial.</p>`);
 
   const live = tracker.active;
-  const t = trackerText(state.tracker, current.mode);
-  section("a-track", { mode: current.mode, cameras, mics, st: state.tracker, live, enabled: cfg.enabled, cam: current.cameraId, mic: current.micId, mirror: current.mirror, inv: current.invertPitch, auto: current.autostart }, () => {
+  const onAir = s.currentScene === cfg.scene;
+  const waitingForScene = current.followScene && cfg.enabled && !live && !onAir ? cfg.scene : null;
+  const t = trackerText(state.tracker, current.mode, waitingForScene);
+  section("a-track", { mode: current.mode, cameras, mics, st: state.tracker, live, enabled: cfg.enabled, cam: current.cameraId, mic: current.micId, mirror: current.mirror, inv: current.invertPitch, auto: current.autostart, follow: current.followScene, scene: cfg.scene, onAir }, () => {
     const devices = current.mode === "camera" ? cameras : mics;
     const selected = current.mode === "camera" ? current.cameraId : current.micId;
     return `
-    <h3><span class="num">2</span> Que se mueva como tú</h3>
+    <h3><span class="num">3</span> Que se mueva como tú</h3>
     <div class="segmented" role="group" aria-label="Qué seguir">
       <button data-action="mode" data-mode="camera" class="${current.mode === "camera" ? "on" : ""}">📷 Mi cara (cámara)</button>
       <button data-action="mode" data-mode="voice" class="${current.mode === "voice" ? "on" : ""}">🎙 Mi voz (micrófono)</button>
@@ -218,8 +294,14 @@ export function updateAvatar(force = false) {
         </select></label>
       <button class="ghost" data-action="find-devices">Buscar dispositivos</button>
     </div>
+    <label class="check-inline"><input type="checkbox" data-bind="follow" ${current.followScene ? "checked" : ""} /> <span><b>Seguir solo cuando la escena «${esc(cfg.scene)}» esté en pantalla</b> (recomendado)</span></label>
+    <p class="hint">${
+      current.followScene
+        ? "Así la cámara queda libre para OBS en el resto de escenas y no se gasta procesador de más. Si usas la misma cámara que OBS, en OBS abre las propiedades de esa cámara y marca <b>«Desactivar cuando no se muestra»</b>."
+        : "El seguimiento estará siempre en marcha mientras no lo pares."
+    }</p>
     <div class="row">
-      ${live ? `<button class="danger" data-action="stop">Parar seguimiento</button>` : `<button class="primary" data-action="start" ${cfg.enabled ? "" : "disabled"}>Empezar seguimiento</button>`}
+      ${live ? `<button class="danger" data-action="stop">Parar seguimiento</button>` : `<button class="${current.followScene ? "" : "primary"}" data-action="start" ${cfg.enabled ? "" : "disabled"}>${current.followScene ? "Probar el seguimiento ahora" : "Empezar seguimiento"}</button>`}
       ${live && current.mode === "camera" ? `<button data-action="calibrate">Calibrar (mirando al frente)</button>` : ""}
     </div>
     <p class="status ${t.kind}">${esc(t.text)}</p>
@@ -227,30 +309,45 @@ export function updateAvatar(force = false) {
     <details><summary>Más opciones</summary>
       <label class="check-inline"><input type="checkbox" data-bind="mirror" ${current.mirror ? "checked" : ""} /> Efecto espejo (tu lado izquierdo es el izquierdo de la pantalla)</label>
       <label class="check-inline"><input type="checkbox" data-bind="invert-pitch" ${current.invertPitch ? "checked" : ""} /> Invertir arriba/abajo de la cabeza</label>
-      <label class="check-inline"><input type="checkbox" data-bind="autostart" ${current.autostart ? "checked" : ""} /> Empezar el seguimiento al abrir la app</label>
+      ${current.followScene ? "" : `<label class="check-inline"><input type="checkbox" data-bind="autostart" ${current.autostart ? "checked" : ""} /> Empezar el seguimiento al abrir la app</label>`}
     </details>`;
   });
 
   // La preview también es una página conectada: no cuenta como «OBS la está viendo».
   const preview = wantPreview ? 1 : 0;
   const obsSeen = Math.max(0, a.clients - preview) > 0;
-  section("a-obs", { url: a.url, running, obsSeen, live: connected(), enabled: cfg.enabled }, () => `
-    <h3><span class="num">3</span> Ponlo en OBS</h3>
-    <p>El avatar es una <b>fuente de navegador</b> con fondo transparente. Tienes dos formas:</p>
-    <div class="row"><button class="primary" data-action="create-source" ${cfg.enabled && running && connected() ? "" : "disabled"}>Añadirlo a la escena actual de OBS</button>
-      ${!connected() ? `<small class="hint">Conecta con OBS primero.</small>` : ""}</div>
-    <p class="hint">O a mano: en OBS, <b>+ → Navegador</b>, pega esta dirección y pon 800 × 800:</p>
-    <div class="url-row"><code>${esc(a.url)}</code><button data-action="copy" data-text="${esc(a.url)}" ${running ? "" : "disabled"}>Copiar</button></div>
-    <p class="status ${obsSeen ? "ok" : ""}">${obsSeen ? "OBS está viendo el avatar ✓" : running ? "Todavía ninguna fuente de OBS está conectada al avatar." : "Activa el avatar para obtener la dirección."}</p>`);
+  const sceneExists = s.scenes.includes(cfg.scene);
+  const ready = cfg.enabled && running && connected();
+  section("a-obs", { url: a.url, running, obsSeen, live: connected(), enabled: cfg.enabled, scene: cfg.scene, sceneExists, from: s.currentScene, copy: current.copySources, quick: current.addQuick }, () => `
+    <h3><span class="num">2</span> Crea la escena del avatar en OBS</h3>
+    <p>Para cuando no quieres tu cámara en pantalla (una cinemática, un momento tranquilo): en esa escena el avatar aparece <b>pequeño, abajo a la izquierda</b>, en lugar de tu cara. Cambias a ella con un toque.</p>
+    ${
+      sceneExists
+        ? `<p class="status ok">La escena «${esc(cfg.scene)}» ya existe en OBS ✓. Elígela como cualquier otra (también desde el móvil).</p>`
+        : `<div class="row">
+            <label class="field grow"><span>Nombre de la escena</span><input type="text" data-bind="scene-name" value="${esc(cfg.scene)}" maxlength="100" /></label>
+          </div>
+          <label class="check-inline"><input type="checkbox" data-bind="copy-sources" ${current.copySources ? "checked" : ""} /> <span>Copiar las fuentes de la escena actual${s.currentScene ? ` («${esc(s.currentScene)}»)` : ""}, <b>menos las cámaras</b> (el juego, marcos, textos…)</span></label>
+          <label class="check-inline"><input type="checkbox" data-bind="add-quick" ${current.addQuick ? "checked" : ""} /> <span>Añadirla a mis escenas rápidas</span></label>
+          <div class="row"><button class="primary" data-action="create-scene" ${ready ? "" : "disabled"}>Crear la escena «${esc(cfg.scene)}» en OBS</button>
+            ${!connected() ? `<small class="hint">Conecta con OBS primero.</small>` : !cfg.enabled ? `<small class="hint">Activa el avatar primero.</small>` : ""}</div>`
+    }
+    <p class="status ${obsSeen ? "ok" : ""}">${obsSeen ? "OBS está viendo el avatar ✓" : running ? "Todavía ninguna fuente de OBS está conectada al avatar." : "Activa el avatar para obtener la dirección."}</p>
+    <details><summary>Otras formas de añadirlo</summary>
+      <div class="row"><button data-action="create-source" ${ready ? "" : "disabled"}>Añadir solo el avatar a la escena actual</button></div>
+      <p class="hint">O a mano: en OBS, <b>+ → Navegador</b>, pega esta dirección y pon <b>800 × 880</b> (fondo transparente):</p>
+      <div class="url-row"><code>${esc(a.url)}</code><button data-action="copy" data-text="${esc(a.url)}" ${running ? "" : "disabled"}>Copiar</button></div>
+    </details>`);
 }
 
 /** Se llama al arrancar: si el usuario lo pidió, empieza a seguir la cara o la voz sin tener que abrir la pestaña. */
 export function maybeAutostart() {
+  syncFollow();
   if (autostarted) return;
   const cfg = state.snap?.settings.avatar;
   if (!cfg?.enabled || !state.avatar?.running) return;
   autostarted = true;
-  if (current.autostart) void startTracking();
+  if (current.autostart && !current.followScene) void startTracking();
 }
 
 /** Si se desactiva el avatar desde otro sitio (p. ej. los ajustes), se suelta la cámara. */

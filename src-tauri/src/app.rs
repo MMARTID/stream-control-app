@@ -7,7 +7,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::{
     avatar::{Avatar, AvatarFrame, AvatarStatus},
-    control::{Control, InputView, Snapshot},
+    control::{AvatarSceneReport, Control, InputView, Snapshot},
     panel::{Panel, PanelStatus},
     preview::Interest,
     settings::{
@@ -97,6 +97,12 @@ fn avatar_push(avatar: State<'_, Arc<Avatar>>, frame: AvatarFrame) {
 #[tauri::command]
 async fn create_avatar_source(control: Ctl<'_>) -> Result<String, String> {
     control.create_avatar_source().await
+}
+
+/// Crea la escena del avatar (el avatar abajo a la izquierda, sin cámara) en OBS.
+#[tauri::command]
+async fn create_avatar_scene(control: Ctl<'_>, copy_sources: bool, add_quick: bool) -> Result<AvatarSceneReport, String> {
+    control.create_avatar_scene(copy_sources, add_quick).await
 }
 
 #[tauri::command]
@@ -198,6 +204,7 @@ pub fn run() {
             get_avatar_status,
             avatar_push,
             create_avatar_source,
+            create_avatar_scene,
             get_panel_status,
             set_panel_password,
             revoke_device,

@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test src/avatar/mapping.test.ts",
+    "test": "node --test src/avatar/mapping.test.ts src/avatar/follow.test.ts",
     "predev": "node scripts/copy-mediapipe.mjs",
     "prebuild": "node scripts/copy-mediapipe.mjs"
   },

@@ -32,7 +32,7 @@ Idioma: interfaz, documentación, mensajes de error y comentarios en español.
 ```bash
 npm install
 npm run tauri dev                  # arranca la app (necesita Rust y Node)
-cd src-tauri && cargo test         # 65 pruebas contra el OBS simulado (incluye TLS real del panel y el avatar)
+cd src-tauri && cargo test         # 69 pruebas contra el OBS simulado (incluye TLS real del panel y el avatar)
 npm test                           # conversiones del seguimiento de la cara y la voz
 cd src-tauri && cargo test keyring_real -- --ignored   # almacén seguro REAL del sistema
 cd src-tauri && cargo run --example mock_obs           # OBS simulado en 127.0.0.1:4455

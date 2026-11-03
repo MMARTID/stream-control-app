@@ -27,7 +27,24 @@ pub struct Item {
     pub source: String,
     pub enabled: bool,
     pub kind: &'static str,
+    /// Transformación tal como la devuelve OBS (incluye campos de solo lectura como `sourceWidth`).
+    pub transform: Value,
 }
+
+pub fn default_transform() -> Value {
+    json!({
+        "positionX": 0.0, "positionY": 0.0, "rotation": 0.0, "scaleX": 1.0, "scaleY": 1.0, "alignment": 5,
+        "boundsType": "OBS_BOUNDS_NONE", "boundsAlignment": 0, "boundsWidth": 1.0, "boundsHeight": 1.0,
+        "cropLeft": 0, "cropRight": 0, "cropTop": 0, "cropBottom": 0,
+        "sourceWidth": 1920.0, "sourceHeight": 1080.0, "width": 1920.0, "height": 1080.0,
+    })
+}
+
+/// Campos que OBS deja escribir en una transformación; el resto es de solo lectura.
+pub const WRITABLE_TRANSFORM: [&str; 14] = [
+    "positionX", "positionY", "rotation", "scaleX", "scaleY", "alignment", "boundsType", "boundsAlignment",
+    "boundsWidth", "boundsHeight", "cropLeft", "cropRight", "cropTop", "cropBottom",
+];
 
 /// JPEG válido de 1×1 px, para las capturas simuladas.
 pub const TINY_JPEG: &str = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
@@ -49,15 +66,23 @@ impl MockState {
     fn new(password: Option<String>) -> Self {
         let cameras = || {
             vec![
-                Item { id: 1, source: "Cámara móvil".into(), enabled: true, kind: "dshow_input" },
-                Item { id: 2, source: "Webcam".into(), enabled: false, kind: "dshow_input" },
-                Item { id: 3, source: "Marco".into(), enabled: true, kind: "image_source" },
-                Item { id: 4, source: "Micro".into(), enabled: true, kind: "wasapi_input_capture" },
+                Item { id: 1, source: "Cámara móvil".into(), enabled: true, kind: "dshow_input", transform: default_transform() },
+                Item { id: 2, source: "Webcam".into(), enabled: false, kind: "dshow_input", transform: default_transform() },
+                Item { id: 3, source: "Marco".into(), enabled: true, kind: "image_source", transform: default_transform() },
+                Item { id: 4, source: "Micro".into(), enabled: true, kind: "wasapi_input_capture", transform: default_transform() },
             ]
         };
         let mut items = HashMap::new();
-        items.insert("Juego".to_owned(), cameras());
-        items.insert("Charla".to_owned(), cameras());
+        let framed = || {
+            let mut v = cameras();
+            v[2].transform["positionX"] = json!(100.0);
+            v[2].transform["positionY"] = json!(50.0);
+            v[2].transform["scaleX"] = json!(0.5);
+            v[2].transform["scaleY"] = json!(0.5);
+            v
+        };
+        items.insert("Juego".to_owned(), framed());
+        items.insert("Charla".to_owned(), framed());
         items.insert("Pausa / baño".to_owned(), vec![]);
         Self {
             password,
@@ -248,7 +273,8 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
             Some(items) => {
                 let items: Vec<Value> = items
                     .iter()
-                    .map(|i| json!({ "sceneItemId": i.id, "sourceName": i.source, "sceneItemEnabled": i.enabled, "sceneItemIndex": i.id, "inputKind": i.kind, "sourceType": "OBS_SOURCE_TYPE_INPUT" }))
+                    .enumerate()
+                    .map(|(idx, i)| json!({ "sceneItemId": i.id, "sourceName": i.source, "sceneItemEnabled": i.enabled, "sceneItemIndex": idx, "inputKind": i.kind, "sourceType": "OBS_SOURCE_TYPE_INPUT" }))
                     .collect();
                 (Ok(Some(json!({ "sceneItems": items }))), vec![])
             }
@@ -293,11 +319,71 @@ fn handle(s: &mut MockState, kind: &str, data: &Value) -> Handled {
             }
             let Some(items) = s.items.get_mut(&scene) else { return (not_found("la escena"), vec![]) };
             let id = items.iter().map(|i| i.id).max().unwrap_or(0) + 1;
-            items.push(Item { id, source: name, enabled: true, kind: "browser_source" });
+            items.push(Item { id, source: name, enabled: true, kind: "browser_source", transform: default_transform() });
             (
                 Ok(Some(json!({ "inputUuid": "uuid-nuevo", "sceneItemId": id }))),
                 vec![event("SceneItemCreated", json!({ "sceneName": scene, "sceneUuid": "x", "sceneItemId": id }))],
             )
+        }
+        "CreateScene" => {
+            let name = data["sceneName"].as_str().unwrap_or_default().to_owned();
+            if s.scenes.contains(&name) {
+                return (Err((601, "Ya existe una escena con ese nombre".into())), vec![]);
+            }
+            s.scenes.push(name.clone());
+            s.items.insert(name.clone(), vec![]);
+            (Ok(Some(json!({ "sceneUuid": "uuid-escena" }))), vec![event("SceneCreated", json!({ "sceneName": name, "sceneUuid": "x", "isGroup": false }))])
+        }
+        "GetVideoSettings" => (
+            Ok(Some(json!({ "fpsNumerator": 60, "fpsDenominator": 1, "baseWidth": 1920, "baseHeight": 1080, "outputWidth": 1920, "outputHeight": 1080 }))),
+            vec![],
+        ),
+        "CreateSceneItem" => {
+            let scene = data["sceneName"].as_str().unwrap_or_default().to_owned();
+            let source = data["sourceName"].as_str().unwrap_or_default().to_owned();
+            let enabled = data["sceneItemEnabled"].as_bool().unwrap_or(true);
+            let kind = s.items.values().flatten().find(|i| i.source == source).map(|i| i.kind);
+            if !s.items.contains_key(&scene) {
+                return (not_found("la escena"), vec![]);
+            }
+            let Some(kind) = kind.or_else(|| s.scenes.contains(&source).then_some("scene")) else {
+                return (not_found("la fuente"), vec![]);
+            };
+            let items = s.items.get_mut(&scene).unwrap();
+            let id = items.iter().map(|i| i.id).max().unwrap_or(0) + 1;
+            items.push(Item { id, source, enabled, kind, transform: default_transform() });
+            (
+                Ok(Some(json!({ "sceneItemId": id }))),
+                vec![event("SceneItemCreated", json!({ "sceneName": scene, "sceneUuid": "x", "sceneItemId": id }))],
+            )
+        }
+        "GetSceneItemTransform" => {
+            let scene = data["sceneName"].as_str().unwrap_or_default();
+            let id = data["sceneItemId"].as_i64().unwrap_or(-1);
+            match s.items.get(scene).and_then(|items| items.iter().find(|i| i.id == id)) {
+                Some(item) => (Ok(Some(json!({ "sceneItemTransform": item.transform }))), vec![]),
+                None => (not_found("el elemento"), vec![]),
+            }
+        }
+        "SetSceneItemTransform" => {
+            let scene = data["sceneName"].as_str().unwrap_or_default().to_owned();
+            let id = data["sceneItemId"].as_i64().unwrap_or(-1);
+            let new = data["sceneItemTransform"].clone();
+            // Como OBS, rechaza lo que no es un campo escribible.
+            if let Some(obj) = new.as_object() {
+                if let Some(bad) = obj.keys().find(|k| !WRITABLE_TRANSFORM.contains(&k.as_str())) {
+                    return (Err((300, format!("Campo no escribible: {bad}"))), vec![]);
+                }
+            }
+            match s.items.get_mut(&scene).and_then(|items| items.iter_mut().find(|i| i.id == id)) {
+                Some(item) => {
+                    for (k, v) in new.as_object().cloned().unwrap_or_default() {
+                        item.transform[k] = v;
+                    }
+                    (Ok(None), vec![])
+                }
+                None => (not_found("el elemento"), vec![]),
+            }
         }
         "GetStats" => (
             Ok(Some(json!({

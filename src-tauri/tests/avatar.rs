@@ -11,7 +11,7 @@ use stream_control_lib::{
     avatar::{Avatar, AvatarFrame, AvatarStatus},
     control::{Control, Snapshot},
     obs::ConnectionState,
-    settings::{AvatarSettings, ObsSettings, Settings, SettingsStore, secrets::MemoryStore},
+    settings::{AvatarSettings, Camera, ObsSettings, Settings, SettingsStore, secrets::MemoryStore},
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -22,12 +22,16 @@ use tokio::{
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 
 async fn start(name: &str, avatar: AvatarSettings) -> (MockObs, Arc<Control>, Arc<Avatar>) {
+    start_with(name, avatar, vec![]).await
+}
+
+async fn start_with(name: &str, avatar: AvatarSettings, cameras: Vec<Camera>) -> (MockObs, Arc<Control>, Arc<Avatar>) {
     let obs = MockObs::start(None, None).await;
     let dir = std::env::temp_dir().join(format!("stream-control-av-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let store = SettingsStore::new(dir.join("settings.json"));
     store
-        .save(&Settings { obs: ObsSettings { host: "127.0.0.1".into(), port: obs.port }, avatar, ..Default::default() })
+        .save(&Settings { obs: ObsSettings { host: "127.0.0.1".into(), port: obs.port }, avatar, cameras, ..Default::default() })
         .unwrap();
     let control = Control::start(store, Arc::new(MemoryStore::default()));
     let avatar = Avatar::start(Arc::clone(&control));
@@ -37,7 +41,7 @@ async fn start(name: &str, avatar: AvatarSettings) -> (MockObs, Arc<Control>, Ar
 }
 
 fn enabled() -> AvatarSettings {
-    AvatarSettings { enabled: true, port: 0, character: "jason".into() }
+    AvatarSettings { enabled: true, port: 0, character: "jason".into(), ..Default::default() }
 }
 
 async fn wait_snapshot(rx: &mut watch::Receiver<Snapshot>, pred: impl Fn(&Snapshot) -> bool) {
@@ -208,7 +212,7 @@ async fn cuenta_las_paginas_conectadas_para_decir_si_obs_lo_esta_viendo() {
 
 #[tokio::test]
 async fn se_enciende_y_se_apaga_desde_los_ajustes_y_libera_el_puerto() {
-    let (_obs, control, avatar) = start("onoff", AvatarSettings { enabled: false, port: 0, character: "cal".into() }).await;
+    let (_obs, control, avatar) = start("onoff", AvatarSettings { enabled: false, port: 0, character: "cal".into(), ..Default::default() }).await;
     let off = wait_status(&avatar, |s| !s.enabled).await;
     assert!(!off.running);
 
@@ -230,7 +234,7 @@ async fn se_enciende_y_se_apaga_desde_los_ajustes_y_libera_el_puerto() {
 async fn si_el_puerto_esta_ocupado_lo_dice() {
     let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = busy.local_addr().unwrap().port();
-    let (_obs, _control, avatar) = start("ocupado", AvatarSettings { enabled: true, port, character: "jason".into() }).await;
+    let (_obs, _control, avatar) = start("ocupado", AvatarSettings { enabled: true, port, character: "jason".into(), ..Default::default() }).await;
     let s = wait_status(&avatar, |s| s.error.is_some()).await;
     assert!(!s.running);
     assert!(s.error.unwrap().contains("ya está en uso"));
@@ -256,10 +260,27 @@ async fn los_ajustes_del_avatar_se_validan() {
     assert!(control.save_settings(s).await.unwrap_err().contains("puerto distinto"));
 }
 
+fn cameras() -> Vec<Camera> {
+    vec![
+        Camera { id: "movil".into(), name: "Móvil".into(), source: "Cámara móvil".into() },
+        Camera { id: "webcam".into(), name: "Webcam".into(), source: "Webcam".into() },
+    ]
+}
+
+fn disabled() -> AvatarSettings {
+    // Desactivado: solo se prueba la conversación con OBS, sin abrir ningún puerto.
+    AvatarSettings { enabled: false, port: 4488, ..Default::default() }
+}
+
+/// Escena, orden de las fuentes y transformaciones tal como las dejó OBS (simulado).
+fn items_of(obs: &MockObs, scene: &str) -> Vec<(String, Value)> {
+    obs.state.lock().unwrap().items[scene].iter().map(|i| (i.source.clone(), i.transform.clone())).collect()
+}
+
 #[tokio::test]
-async fn crea_la_fuente_de_navegador_del_avatar_en_la_escena_en_programa() {
-    // Desactivado: solo se prueba la petición a OBS, sin abrir ningún puerto.
-    let (obs, control, _avatar) = start("crear", AvatarSettings { enabled: false, port: 4488, character: "jason".into() }).await;
+async fn crea_la_fuente_del_avatar_en_la_escena_actual_abajo_a_la_izquierda() {
+    let (obs, control, _avatar) = start("fuente", disabled()).await;
+
     let scene = control.create_avatar_source().await.unwrap();
     assert_eq!(scene, "Juego");
     let log = obs.log();
@@ -268,9 +289,91 @@ async fn crea_la_fuente_de_navegador_del_avatar_en_la_escena_en_programa() {
     assert_eq!(data["inputKind"], "browser_source");
     assert_eq!(data["inputName"], "Avatar (Stream Control)");
     assert_eq!(data["inputSettings"]["url"], "http://127.0.0.1:4488/avatar");
-    assert_eq!((data["inputSettings"]["width"].as_i64(), data["inputSettings"]["height"].as_i64()), (Some(800), Some(800)));
+    assert_eq!((data["inputSettings"]["width"].as_i64(), data["inputSettings"]["height"].as_i64()), (Some(800), Some(880)));
 
-    // Si ya existe, se explica en vez de duplicarlo.
+    // Abajo a la izquierda: lienzo de 1920×1080, alto del 34 % (367 px) y margen del 2 % (22 px).
+    let (_, transform) = items_of(&obs, "Juego").into_iter().find(|(name, _)| name == "Avatar (Stream Control)").unwrap();
+    let scale = 367.0 / 880.0;
+    assert_eq!(transform["positionX"], 22.0);
+    assert_eq!(transform["positionY"], 1080.0 - 22.0 - 367.0);
+    assert!((transform["scaleX"].as_f64().unwrap() - scale).abs() < 1e-9);
+    assert_eq!(transform["scaleX"], transform["scaleY"]);
+
+    // No se duplica en la misma escena.
     let err = control.create_avatar_source().await.unwrap_err();
-    assert!(err.contains("Ya existe"), "{err}");
+    assert!(err.contains("ya tiene el avatar"), "{err}");
+}
+
+#[tokio::test]
+async fn crea_la_escena_avatar_con_el_avatar_y_copia_las_fuentes_menos_las_camaras() {
+    let (obs, control, _avatar) = start_with("escena", disabled(), cameras()).await;
+
+    let report = control.create_avatar_scene(true, true).await.unwrap();
+    assert_eq!(report.scene, "Avatar");
+    assert_eq!(report.copied, 2, "Marco y Micro; las dos cámaras no se copian");
+    assert!(report.failed.is_empty());
+
+    let items = items_of(&obs, "Avatar");
+    let names: Vec<_> = items.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["Marco", "Micro", "Avatar (Stream Control)"], "mismo orden de apilado y el avatar encima");
+    assert!(!names.contains(&"Cámara móvil") && !names.contains(&"Webcam"));
+
+    // «Marco» conserva su posición y tamaño de la escena de origen.
+    let (_, marco) = &items[0];
+    assert_eq!((marco["positionX"].as_f64(), marco["positionY"].as_f64(), marco["scaleX"].as_f64()), (Some(100.0), Some(50.0), Some(0.5)));
+    // Solo se escribieron campos escribibles (el simulador rechaza `sourceWidth`, `width`…).
+    // El avatar queda abajo a la izquierda.
+    let (_, avatar) = &items[2];
+    assert_eq!((avatar["positionX"].as_f64(), avatar["positionY"].as_f64()), (Some(22.0), Some(691.0)));
+
+    // Se añade a las escenas rápidas para cambiar de un toque.
+    let quick = control.snapshot().settings.quick_scenes;
+    assert!(quick.iter().any(|q| q.scene == "Avatar" && q.label == "Avatar" && !q.mute_mic));
+
+    // La escena de origen no se ha tocado.
+    let origin: Vec<_> = items_of(&obs, "Juego").into_iter().map(|(n, _)| n).collect();
+    assert_eq!(origin, ["Cámara móvil", "Webcam", "Marco", "Micro"]);
+}
+
+#[tokio::test]
+async fn sin_copiar_fuentes_la_escena_solo_lleva_el_avatar_y_no_se_duplica_la_escena_rapida() {
+    let (obs, control, _avatar) = start_with("solo", disabled(), cameras()).await;
+    let report = control.create_avatar_scene(false, false).await.unwrap();
+    assert_eq!(report.copied, 0);
+    let names: Vec<_> = items_of(&obs, "Avatar").into_iter().map(|(n, _)| n).collect();
+    assert_eq!(names, ["Avatar (Stream Control)"]);
+    assert!(control.snapshot().settings.quick_scenes.is_empty(), "sin pedirlo no se toca la lista de escenas rápidas");
+}
+
+#[tokio::test]
+async fn no_toca_una_escena_que_ya_existe_y_reutiliza_la_fuente_del_avatar_si_ya_estaba_en_obs() {
+    let (obs, control, _avatar) = start_with("existe", disabled(), cameras()).await;
+
+    // El avatar ya existe como entrada de OBS (p. ej. de una escena borrada): se reutiliza, no se duplica.
+    control.create_avatar_source().await.unwrap();
+    let report = control.create_avatar_scene(false, false).await.unwrap();
+    assert_eq!(report.scene, "Avatar");
+    assert!(obs.log().iter().any(|(k, d)| k == "CreateSceneItem" && d["sourceName"] == "Avatar (Stream Control)" && d["sceneName"] == "Avatar"));
+    let inputs = obs.state.lock().unwrap().items.values().flatten().filter(|i| i.kind == "browser_source").count();
+    assert_eq!(inputs, 2, "una en «Juego» y una en «Avatar», sobre la misma entrada (el simulador cuenta elementos)");
+
+    // La escena ya existe: error claro y nada que modificar.
+    let before = obs.log().len();
+    let err = control.create_avatar_scene(true, true).await.unwrap_err();
+    assert!(err.contains("Ya existe una escena «Avatar»"), "{err}");
+    assert!(obs.log()[before..].iter().all(|(k, _)| !k.starts_with("Create") && !k.starts_with("Set")), "no debe pedir cambios a OBS");
+}
+
+#[tokio::test]
+async fn el_nombre_de_la_escena_del_avatar_se_valida_y_se_puede_cambiar() {
+    let (obs, control, _avatar) = start_with("nombre", disabled(), vec![]).await;
+    let mut settings = control.snapshot().settings;
+    settings.avatar.scene = "  ".into();
+    assert!(control.save_settings(settings.clone()).await.unwrap_err().contains("escena del avatar"));
+
+    settings.avatar.scene = "Cinemática".into();
+    control.save_settings(settings).await.unwrap();
+    let report = control.create_avatar_scene(false, true).await.unwrap();
+    assert_eq!(report.scene, "Cinemática");
+    assert!(obs.state.lock().unwrap().scenes.contains(&"Cinemática".to_owned()));
 }

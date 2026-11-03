@@ -29,7 +29,7 @@ async fn main() {
     store
         .save(&Settings {
             obs: ObsSettings { host: "127.0.0.1".into(), port: obs.port },
-            avatar: AvatarSettings { enabled: true, port, character: "jason".into() },
+            avatar: AvatarSettings { enabled: true, port, character: "jason".into(), ..Default::default() },
             ..Default::default()
         })
         .unwrap();

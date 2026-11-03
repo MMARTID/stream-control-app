@@ -17,7 +17,7 @@ const emit = (event: string, payload: unknown) => handlers.get(event)?.forEach((
 const full: Settings = {
   obs: { host: "127.0.0.1", port: 4455 },
   panel: { enabled: true, port: 8443, allowStreamControl: false, onlyQuickScenes: false },
-  avatar: { enabled: true, port: 4488, character: "jason" },
+  avatar: { enabled: true, port: 4488, character: "jason", scene: "Avatar" },
   micInput: "Micro",
   quickScenes: [
     { scene: "Pausa / baño", label: "Pausa / baño", color: "#f59e0b", icon: "☕", muteMic: true },
@@ -31,14 +31,20 @@ const full: Settings = {
 const empty: Settings = {
   obs: { host: "127.0.0.1", port: 4455 },
   panel: { enabled: false, port: 8443, allowStreamControl: false, onlyQuickScenes: false },
-  avatar: { enabled: false, port: 4488, character: "jason" },
+  avatar: { enabled: false, port: 4488, character: "jason", scene: "Avatar" },
   micInput: null,
   quickScenes: [],
   cameras: [],
 };
 
 const items = (scene: string) =>
-  scene === "Pausa / baño"
+  scene === "Avatar"
+    ? [
+        { id: 3, name: "Marco", enabled: true, visual: true, kind: "image_source" },
+        { id: 4, name: "Micro", enabled: true, visual: false, kind: "wasapi_input_capture" },
+        { id: 5, name: "Avatar (Stream Control)", enabled: true, visual: true, kind: "browser_source" },
+      ]
+    : scene === "Pausa / baño"
     ? []
     : [
         { id: 1, name: "Cámara móvil", enabled: cams.movil, visual: true, kind: "dshow_input" },
@@ -231,6 +237,16 @@ export async function invoke(cmd: string, args: Record<string, unknown> = {}): P
     case "revoke_device": panel.devices = panel.devices.filter((d) => d.id !== args.id); emit("panel", panel); return;
     case "avatar_push": return;
     case "create_avatar_source": return state.currentScene ?? "Juego";
+    case "create_avatar_scene": {
+      const name = state.settings.avatar.scene.trim();
+      if (state.scenes.includes(name)) throw `Ya existe una escena «${name}» en OBS. Cámbiale el nombre o bórrala y vuelve a intentarlo`;
+      state.scenes.push(name);
+      if (args.addQuick && !state.settings.quickScenes.some((q) => q.scene === name)) {
+        state.settings.quickScenes.push({ scene: name, label: "Avatar", color: "#a855f7", icon: "🎭", muteMic: false });
+      }
+      push();
+      return { scene: name, copied: args.copySources ? 2 : 0, failed: [] };
+    }
     default: throw `Comando simulado desconocido: ${cmd}`;
   }
 }

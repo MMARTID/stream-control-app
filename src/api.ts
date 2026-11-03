@@ -31,6 +31,14 @@ export interface AvatarSettings {
   enabled: boolean;
   port: number;
   character: string;
+  /** Escena de OBS en la que el avatar sustituye a la cámara. */
+  scene: string;
+}
+
+export interface AvatarSceneReport {
+  scene: string;
+  copied: number;
+  failed: string[];
 }
 
 export interface Settings {
@@ -177,6 +185,7 @@ export const api = {
   getAvatarStatus: () => call<AvatarStatus>("get_avatar_status"),
   avatarPush: (frame: AvatarFrame) => call<void>("avatar_push", { frame }),
   createAvatarSource: () => call<string>("create_avatar_source"),
+  createAvatarScene: (copySources: boolean, addQuick: boolean) => call<AvatarSceneReport>("create_avatar_scene", { copySources, addQuick }),
   onState: (h: (s: Snapshot) => void) => listen("state", h),
   onFrame: (h: (f: { key: string; image: string }) => void) => listen("frame", h),
   onPanel: (h: (s: PanelStatus) => void) => listen("panel", h),

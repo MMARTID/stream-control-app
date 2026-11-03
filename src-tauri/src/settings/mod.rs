@@ -86,11 +86,14 @@ pub struct AvatarSettings {
     /// Puerto del servidor local (solo 127.0.0.1) que usa la fuente de navegador de OBS.
     pub port: u16,
     pub character: String,
+    /// Escena de OBS en la que el avatar sustituye a la cámara (abajo a la izquierda). La app la crea
+    /// con un botón y, si se quiere, solo sigue la cara mientras esa escena está en pantalla.
+    pub scene: String,
 }
 
 impl Default for AvatarSettings {
     fn default() -> Self {
-        Self { enabled: false, port: 4488, character: AVATAR_CHARACTERS[0].into() }
+        Self { enabled: false, port: 4488, character: AVATAR_CHARACTERS[0].into(), scene: "Avatar".into() }
     }
 }
 

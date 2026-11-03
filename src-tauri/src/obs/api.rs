@@ -3,7 +3,8 @@
 //! Nombres de petición y campos comprobados contra docs/generated/protocol.md de
 //! obsproject/obs-websocket: GetVersion, GetSceneList, SetCurrentProgramScene,
 //! GetInputList, GetInputMute, SetInputMute, GetSceneItemList, SetSceneItemEnabled,
-//! GetStreamStatus, StartStream, StopStream, GetStats y GetSourceScreenshot.
+//! GetStreamStatus, StartStream, StopStream, GetStats, GetSourceScreenshot, CreateInput, CreateScene,
+//! GetVideoSettings, CreateSceneItem, GetSceneItemTransform y SetSceneItemTransform.
 
 use serde_json::{Value, json};
 
@@ -26,6 +27,8 @@ pub struct SceneItem {
     pub id: i64,
     pub source_name: String,
     pub enabled: bool,
+    /// Posición en la pila de la escena (0 = el de más abajo), si OBS la envía.
+    pub index: Option<i64>,
     /// `inputKind` de OBS (p. ej. `dshow_input`). Vacío en escenas anidadas.
     pub kind: Option<String>,
 }
@@ -129,6 +132,7 @@ impl ObsClient {
                         .ok_or_else(|| ObsError::Protocol("falta `sceneItemId`".into()))?,
                     source_name: str_field(i, "sourceName")?,
                     enabled: bool_field(i, "sceneItemEnabled")?,
+                    index: i.get("sceneItemIndex").and_then(Value::as_i64),
                     kind: i.get("inputKind").and_then(Value::as_str).map(str::to_owned),
                 })
             })
@@ -139,6 +143,52 @@ impl ObsClient {
         self.request(
             "SetSceneItemEnabled",
             Some(json!({ "sceneName": scene, "sceneItemId": item_id, "sceneItemEnabled": enabled })),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn create_scene(&self, name: &str) -> Result<(), ObsError> {
+        self.request("CreateScene", Some(json!({ "sceneName": name }))).await?;
+        Ok(())
+    }
+
+    /// Tamaño del lienzo base de OBS (`baseWidth` × `baseHeight` de `GetVideoSettings`).
+    pub async fn get_canvas_size(&self) -> Result<(u32, u32), ObsError> {
+        let v = data(self.request("GetVideoSettings", None).await?)?;
+        let n = |key: &str| {
+            v.get(key)
+                .and_then(Value::as_u64)
+                .map(|n| n as u32)
+                .filter(|n| *n > 0)
+                .ok_or_else(|| ObsError::Protocol(format!("falta `{key}`")))
+        };
+        Ok((n("baseWidth")?, n("baseHeight")?))
+    }
+
+    /// Añade a una escena una fuente que ya existe en OBS.
+    pub async fn create_scene_item(&self, scene: &str, source: &str, enabled: bool) -> Result<i64, ObsError> {
+        let v = data(
+            self.request(
+                "CreateSceneItem",
+                Some(json!({ "sceneName": scene, "sourceName": source, "sceneItemEnabled": enabled })),
+            )
+            .await?,
+        )?;
+        v.get("sceneItemId").and_then(Value::as_i64).ok_or_else(|| ObsError::Protocol("falta `sceneItemId`".into()))
+    }
+
+    pub async fn get_scene_item_transform(&self, scene: &str, item_id: i64) -> Result<Value, ObsError> {
+        let v = data(
+            self.request("GetSceneItemTransform", Some(json!({ "sceneName": scene, "sceneItemId": item_id }))).await?,
+        )?;
+        v.get("sceneItemTransform").cloned().ok_or_else(|| ObsError::Protocol("falta `sceneItemTransform`".into()))
+    }
+
+    pub async fn set_scene_item_transform(&self, scene: &str, item_id: i64, transform: Value) -> Result<(), ObsError> {
+        self.request(
+            "SetSceneItemTransform",
+            Some(json!({ "sceneName": scene, "sceneItemId": item_id, "sceneItemTransform": transform })),
         )
         .await?;
         Ok(())
