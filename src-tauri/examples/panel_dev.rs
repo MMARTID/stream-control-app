@@ -41,6 +41,7 @@ async fn main() {
             obs: ObsSettings { host: "127.0.0.1".into(), port: obs.port },
             panel: PanelSettings { enabled: !plain, port, allow_stream_control: true, only_quick_scenes: false },
             avatar: Default::default(),
+            lights: Default::default(),
             mic_input: Some("Micro".into()),
             quick_scenes: vec![
                 QuickScene { scene: "Pausa / baño".into(), label: "Pausa / baño".into(), color: "#f59e0b".into(), icon: "☕".into(), mute_mic: true },

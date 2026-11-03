@@ -2,7 +2,7 @@
 // sin Tauri ni OBS. Solo se carga cuando no existe `__TAURI_INTERNALS__`.
 // Modos por la URL: ?mock=full (por defecto) | empty (primer uso, sin configurar) | offline (OBS cerrado),
 // y ?pairing para ver un emparejamiento pendiente.
-import type { AvatarStatus, InputView, Interest, PanelStatus, Settings, Snapshot } from "./api";
+import type { AvatarStatus, InputView, Interest, LightDevice, LightMode, LightsStatus, PanelStatus, Settings, Snapshot } from "./api";
 
 const params = new URLSearchParams(location.search);
 const mode = params.get("mock") ?? "full";
@@ -18,6 +18,7 @@ const full: Settings = {
   obs: { host: "127.0.0.1", port: 4455 },
   panel: { enabled: true, port: 8443, allowStreamControl: false, onlyQuickScenes: false },
   avatar: { enabled: true, port: 4488, character: "jason", scene: "Avatar" },
+  lights: { deviceId: null, autoConnect: false },
   micInput: "Micro",
   quickScenes: [
     { scene: "Pausa / baño", label: "Pausa / baño", color: "#f59e0b", icon: "☕", muteMic: true },
@@ -32,6 +33,7 @@ const empty: Settings = {
   obs: { host: "127.0.0.1", port: 4455 },
   panel: { enabled: false, port: 8443, allowStreamControl: false, onlyQuickScenes: false },
   avatar: { enabled: false, port: 4488, character: "jason", scene: "Avatar" },
+  lights: { deviceId: null, autoConnect: false },
   micInput: null,
   quickScenes: [],
   cameras: [],
@@ -120,6 +122,21 @@ const avatar: AvatarStatus = {
   url: "http://127.0.0.1:4488/avatar",
   error: null,
   clients: state.settings.avatar.enabled ? 1 : 0,
+};
+
+// ---- Tiras LED simuladas ----
+const lightModes: LightMode[] = Array.from({ length: 213 }, (_, id) => ({
+  id,
+  name: id === 143 ? "W-R-W Flow" : id === 0 ? "Auto Play" : `Modo ${id}`,
+  category: id < 3 ? "basic" : id < 23 ? "trans" : id < 57 ? "water" : id < 143 ? "run" : id < 167 ? "flow" : "basic",
+}));
+const lights: LightsStatus = { adapter: "ready", scanning: false, connecting: false, devices: [], connected: null, error: null, power: null, color: null, brightness: null, speed: null, mode: null };
+const strips: LightDevice[] = [
+  { id: "AA:BB:CC:11:22:33", name: "MELK-OA10   5F", rssi: -58, likely: true },
+  { id: "AA:BB:CC:44:55:66", name: "Mi Reloj", rssi: -80, likely: false },
+];
+const lightsNeedConnection = () => {
+  if (!lights.connected) throw "No hay ninguna tira conectada. Búscala y conéctala primero";
 };
 
 // ---- Capturas falsas ----
@@ -236,6 +253,30 @@ export async function invoke(cmd: string, args: Record<string, unknown> = {}): P
     case "set_panel_password": panel.hasPassword = !!args.password; emit("panel", panel); return;
     case "revoke_device": panel.devices = panel.devices.filter((d) => d.id !== args.id); emit("panel", panel); return;
     case "avatar_push": return;
+    case "get_lights_status": return lights;
+    case "lights_modes": return lightModes;
+    case "lights_scan": {
+      lights.scanning = true;
+      emit("lights", lights);
+      await new Promise((r) => setTimeout(r, 1800));
+      lights.scanning = false;
+      lights.devices = strips;
+      emit("lights", lights);
+      return strips;
+    }
+    case "lights_connect": {
+      lights.connected = strips.find((s) => s.id === args.id) ?? strips[0];
+      lights.error = null;
+      emit("lights", lights);
+      return;
+    }
+    case "lights_disconnect": lights.connected = null; emit("lights", lights); return;
+    case "lights_color": lightsNeedConnection(); lights.color = [args.r as number, args.g as number, args.b as number]; lights.mode = null; lights.power = true; emit("lights", lights); return;
+    case "lights_brightness": lightsNeedConnection(); lights.brightness = args.level as number; emit("lights", lights); return;
+    case "lights_speed": lightsNeedConnection(); lights.speed = args.level as number; emit("lights", lights); return;
+    case "lights_mode": lightsNeedConnection(); lights.mode = args.mode as number; lights.power = true; emit("lights", lights); return;
+    case "lights_power": lightsNeedConnection(); lights.power = args.on as boolean; emit("lights", lights); return;
+    case "lights_auto_connect": state.settings.lights.autoConnect = args.enabled as boolean; push(); return;
     case "create_avatar_source": return state.currentScene ?? "Juego";
     case "create_avatar_scene": {
       const name = state.settings.avatar.scene.trim();

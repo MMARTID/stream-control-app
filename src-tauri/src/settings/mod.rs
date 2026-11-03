@@ -97,12 +97,23 @@ impl Default for AvatarSettings {
     }
 }
 
+/// Tira LED Bluetooth recordada.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LightsSettings {
+    /// Identificador de la tira (en Windows, su dirección Bluetooth; en macOS, un UUID del sistema).
+    pub device_id: Option<String>,
+    /// Conectarse sola a esa tira al abrir la app.
+    pub auto_connect: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub obs: ObsSettings,
     pub panel: PanelSettings,
     pub avatar: AvatarSettings,
+    pub lights: LightsSettings,
     /// Entrada de audio de OBS que se silencia con el botón del micro.
     pub mic_input: Option<String>,
     pub quick_scenes: Vec<QuickScene>,

@@ -8,6 +8,7 @@ use tauri::{Emitter, Manager, State};
 use crate::{
     avatar::{Avatar, AvatarFrame, AvatarStatus},
     control::{AvatarSceneReport, Control, InputView, Snapshot},
+    lights::{LightDevice, Lights, LightsStatus, bluetooth::BtleBackend, protocol::{self, ModeInfo}},
     panel::{Panel, PanelStatus},
     preview::Interest,
     settings::{
@@ -105,6 +106,76 @@ async fn create_avatar_scene(control: Ctl<'_>, copy_sources: bool, add_quick: bo
     control.create_avatar_scene(copy_sources, add_quick).await
 }
 
+// ---- Tiras LED Bluetooth ----
+
+type Lamps<'a> = State<'a, Arc<Lights>>;
+
+#[tauri::command]
+fn get_lights_status(lights: Lamps<'_>) -> LightsStatus {
+    lights.status()
+}
+
+/// Las 213 animaciones con su nombre oficial y categoría.
+#[tauri::command]
+fn lights_modes() -> Vec<ModeInfo> {
+    protocol::modes().to_vec()
+}
+
+#[tauri::command]
+async fn lights_scan(lights: Lamps<'_>) -> Result<Vec<LightDevice>, String> {
+    lights.scan().await
+}
+
+/// Conecta con una tira y la recuerda para la próxima vez.
+#[tauri::command]
+async fn lights_connect(lights: Lamps<'_>, control: Ctl<'_>, id: String) -> Result<(), String> {
+    lights.connect(&id).await?;
+    let mut settings = control.snapshot().settings;
+    if settings.lights.device_id.as_deref() != Some(id.as_str()) {
+        settings.lights.device_id = Some(id);
+        control.save_settings(settings).await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn lights_disconnect(lights: Lamps<'_>) -> Result<(), String> {
+    lights.disconnect().await;
+    Ok(())
+}
+
+#[tauri::command]
+fn lights_color(lights: Lamps<'_>, r: u8, g: u8, b: u8) -> Result<(), String> {
+    lights.set_color(r, g, b)
+}
+
+#[tauri::command]
+fn lights_brightness(lights: Lamps<'_>, level: u8) -> Result<(), String> {
+    lights.set_brightness(level)
+}
+
+#[tauri::command]
+fn lights_speed(lights: Lamps<'_>, level: u8) -> Result<(), String> {
+    lights.set_speed(level)
+}
+
+#[tauri::command]
+fn lights_mode(lights: Lamps<'_>, mode: u8) -> Result<(), String> {
+    lights.set_mode(mode)
+}
+
+#[tauri::command]
+fn lights_power(lights: Lamps<'_>, on: bool) -> Result<(), String> {
+    lights.power(on)
+}
+
+#[tauri::command]
+async fn lights_auto_connect(control: Ctl<'_>, enabled: bool) -> Result<(), String> {
+    let mut settings = control.snapshot().settings;
+    settings.lights.auto_connect = enabled;
+    control.save_settings(settings).await
+}
+
 #[tauri::command]
 fn get_panel_status(panel: State<'_, Arc<Panel>>) -> PanelStatus {
     panel.status()
@@ -150,6 +221,24 @@ pub fn run() {
                 }
             });
 
+            let lights = Lights::new(Arc::new(BtleBackend::new()));
+            let mut lights_rx = lights.subscribe();
+            let lights_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while lights_rx.changed().await.is_ok() {
+                    let status = lights_rx.borrow_and_update().clone();
+                    let _ = lights_handle.emit("lights", status);
+                }
+            });
+            // Si el usuario lo pidió, se vuelve a conectar sola a la tira de la última vez.
+            let saved = control.snapshot().settings.lights;
+            if let (true, Some(id)) = (saved.auto_connect, saved.device_id) {
+                let lights = Arc::clone(&lights);
+                tauri::async_runtime::spawn(async move {
+                    lights.connect_saved(&id).await;
+                });
+            }
+
             let mut panel_rx = panel.subscribe();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -186,6 +275,7 @@ pub fn run() {
             app.manage(control);
             app.manage(panel);
             app.manage(avatar);
+            app.manage(lights);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -205,6 +295,17 @@ pub fn run() {
             avatar_push,
             create_avatar_source,
             create_avatar_scene,
+            get_lights_status,
+            lights_modes,
+            lights_scan,
+            lights_connect,
+            lights_disconnect,
+            lights_color,
+            lights_brightness,
+            lights_speed,
+            lights_mode,
+            lights_power,
+            lights_auto_connect,
             get_panel_status,
             set_panel_password,
             revoke_device,

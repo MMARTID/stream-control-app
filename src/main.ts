@@ -3,10 +3,11 @@ import { connected, goTab, notify, state, subscribe, type Tab } from "./state";
 import { $, esc, run, toast } from "./util";
 import { guardTracker, maybeAutostart, mountAvatar, updateAvatar } from "./views/avatar";
 import { applyFrame, mountLive, syncPreviews, updateLive } from "./views/live";
+import { mountLights, updateLights } from "./views/lights";
 import { mountMobile, renderPairingBanner, updateMobile } from "./views/mobile";
 import { enterSettings, mountSettings, updateSettings } from "./views/settings";
 
-const TABS: Tab[] = ["live", "avatar", "mobile", "settings"];
+const TABS: Tab[] = ["live", "avatar", "lights", "mobile", "settings"];
 let confirmingStop = false;
 let confirmTimer: number | undefined;
 let shownTab: Tab | null = null;
@@ -61,6 +62,7 @@ function update() {
   switch (state.tab) {
     case "live": return updateLive();
     case "avatar": return updateAvatar();
+    case "lights": return updateLights();
     case "mobile": return updateMobile();
     case "settings": return updateSettings();
   }
@@ -91,6 +93,7 @@ setInterval(renderPairingBanner, 1000);
 async function main() {
   mountLive($("view-live"));
   mountAvatar($("view-avatar"));
+  mountLights($("view-lights"));
   mountMobile($("view-mobile"));
   mountSettings($("view-settings"));
   subscribe(update);
@@ -99,8 +102,16 @@ async function main() {
   await api.onState((s) => { state.snap = s; notify(); });
   await api.onPanel((p) => { state.panel = p; notify(); });
   await api.onAvatar((a) => { state.avatar = a; notify(); });
+  await api.onLights((l) => { state.lights = l; notify(); });
 
-  [state.snap, state.panel, state.avatar, state.version] = await Promise.all([api.getSnapshot(), api.getPanelStatus(), api.getAvatarStatus(), api.version()]);
+  [state.snap, state.panel, state.avatar, state.lights, state.lightModes, state.version] = await Promise.all([
+    api.getSnapshot(),
+    api.getPanelStatus(),
+    api.getAvatarStatus(),
+    api.getLightsStatus(),
+    api.lightsModes(),
+    api.version(),
+  ]);
   $("version").textContent = state.version === "dev" ? "modo prueba" : state.version ? `v${state.version}` : "";
   notify();
 }

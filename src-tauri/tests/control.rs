@@ -20,6 +20,7 @@ fn settings_for(port: u16) -> Settings {
         obs: ObsSettings { host: "127.0.0.1".into(), port },
         panel: Default::default(),
         avatar: Default::default(),
+        lights: Default::default(),
         mic_input: Some("Micro".into()),
         quick_scenes: vec![
             QuickScene { scene: "Pausa / baño".into(), label: "Pausa / baño".into(), mute_mic: true, ..Default::default() },

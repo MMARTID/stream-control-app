@@ -263,3 +263,14 @@ summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
 @media (max-width: 1000px) { .brand small { display: none; } }
 details.help-open ol { margin: 8px 0 8px 18px; padding: 0; display: grid; gap: 6px; }
 details.help-open summary { color: var(--text); }
+
+/* Luces */
+.card h4 { margin: 12px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.card h4 small { text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatch { width: 34px; height: 34px; border-radius: 50%; padding: 0; background: var(--c); border: 2px solid var(--line); }
+.swatch:hover:not(:disabled) { border-color: #fff; }
+.modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; max-height: 280px; overflow: auto; padding-right: 4px; }
+.mode { text-align: left; padding: 7px 10px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+.mode.on { color: var(--text); }

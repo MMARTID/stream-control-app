@@ -34,6 +34,8 @@ rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pe
 argon2 = "0.6.0"
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 if-addrs = "0.15.0"
+btleplug = "0.13.5"
+async-trait = "0.1.92"
 
 [profile.release]
 codegen-units = 1

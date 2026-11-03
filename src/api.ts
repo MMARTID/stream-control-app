@@ -41,10 +41,16 @@ export interface AvatarSceneReport {
   failed: string[];
 }
 
+export interface LightsSettings {
+  deviceId: string | null;
+  autoConnect: boolean;
+}
+
 export interface Settings {
   obs: { host: string; port: number };
   panel: PanelSettings;
   avatar: AvatarSettings;
+  lights: LightsSettings;
   micInput: string | null;
   quickScenes: QuickScene[];
   cameras: CameraConfig[];
@@ -142,6 +148,35 @@ export interface AvatarStatus {
   clients: number;
 }
 
+export interface LightDevice {
+  id: string;
+  name: string;
+  rssi: number | null;
+  /** Parece una tira de esta familia. */
+  likely: boolean;
+}
+
+export interface LightsStatus {
+  adapter: "unknown" | "ready" | "off" | "missing";
+  scanning: boolean;
+  connecting: boolean;
+  devices: LightDevice[];
+  connected: LightDevice | null;
+  error: string | null;
+  power: boolean | null;
+  color: [number, number, number] | null;
+  brightness: number | null;
+  speed: number | null;
+  /** Animación en curso; `null` si hay un color fijo. */
+  mode: number | null;
+}
+
+export interface LightMode {
+  id: number;
+  name: string;
+  category: string;
+}
+
 export interface InputView {
   name: string;
   kind: string;
@@ -183,6 +218,18 @@ export const api = {
   setPanelPassword: (password: string | null) => call<void>("set_panel_password", { password }),
   revokeDevice: (id: string) => call<void>("revoke_device", { id }),
   getAvatarStatus: () => call<AvatarStatus>("get_avatar_status"),
+  getLightsStatus: () => call<LightsStatus>("get_lights_status"),
+  lightsModes: () => call<LightMode[]>("lights_modes"),
+  lightsScan: () => call<LightDevice[]>("lights_scan"),
+  lightsConnect: (id: string) => call<void>("lights_connect", { id }),
+  lightsDisconnect: () => call<void>("lights_disconnect"),
+  lightsColor: (r: number, g: number, b: number) => call<void>("lights_color", { r, g, b }),
+  lightsBrightness: (level: number) => call<void>("lights_brightness", { level }),
+  lightsSpeed: (level: number) => call<void>("lights_speed", { level }),
+  lightsMode: (mode: number) => call<void>("lights_mode", { mode }),
+  lightsPower: (on: boolean) => call<void>("lights_power", { on }),
+  lightsAutoConnect: (enabled: boolean) => call<void>("lights_auto_connect", { enabled }),
+  onLights: (h: (s: LightsStatus) => void) => listen("lights", h),
   avatarPush: (frame: AvatarFrame) => call<void>("avatar_push", { frame }),
   createAvatarSource: () => call<string>("create_avatar_source"),
   createAvatarScene: (copySources: boolean, addQuick: boolean) => call<AvatarSceneReport>("create_avatar_scene", { copySources, addQuick }),

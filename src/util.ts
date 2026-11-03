@@ -26,6 +26,30 @@ export function paintHtml(id: string, html: string) {
 
 export const repaintAll = () => signatures.clear();
 
+/** Llama a `fn` como mucho cada `ms`, y al final con el último valor (para deslizadores y selectores de color). */
+export function throttle<A extends unknown[]>(fn: (...args: A) => void, ms: number) {
+  let last = 0;
+  let timer: number | undefined;
+  let pending: A | null = null;
+  return (...args: A) => {
+    const now = Date.now();
+    if (now - last >= ms) {
+      last = now;
+      fn(...args);
+      return;
+    }
+    pending = args;
+    if (timer === undefined) {
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        last = Date.now();
+        if (pending) fn(...pending);
+        pending = null;
+      }, ms - (now - last));
+    }
+  };
+}
+
 let toastTimer: number | undefined;
 export function toast(message: string, kind: "error" | "ok" = "error") {
   const el = $("toast");

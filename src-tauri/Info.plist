@@ -4,6 +4,8 @@
 <dict>
   <key>NSCameraUsageDescription</key>
   <string>Stream Control usa la cámara para que el avatar copie tu cara. Todo se procesa en tu equipo y no se envía ninguna imagen.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Stream Control usa el Bluetooth para buscar y controlar tus tiras LED.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Stream Control usa el micrófono para mover la boca del avatar cuando hablas. El audio no se guarda ni se envía.</string>
 </dict>
