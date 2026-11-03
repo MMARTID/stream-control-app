@@ -49,6 +49,26 @@ impl SecretStore for KeyringStore {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Usa el almacén REAL del sistema (Credential Manager en Windows, Llavero en macOS),
+    /// por eso está ignorada por defecto. Ejecutar a mano en cada plataforma:
+    /// `cargo test keyring_real -- --ignored`
+    #[test]
+    #[ignore = "toca el almacén seguro real del sistema"]
+    fn keyring_real_guarda_lee_y_borra() {
+        let store = KeyringStore::new("app.streamcontrol.desktop.test");
+        store.delete("prueba").unwrap();
+        assert_eq!(store.get("prueba").unwrap(), None);
+        store.set("prueba", "valor-de-prueba").unwrap();
+        assert_eq!(store.get("prueba").unwrap().as_deref(), Some("valor-de-prueba"));
+        store.delete("prueba").unwrap();
+        assert_eq!(store.get("prueba").unwrap(), None);
+    }
+}
+
 /// Almacén en memoria para pruebas. No se usa en la app.
 #[derive(Default)]
 pub struct MemoryStore(Mutex<HashMap<String, String>>);
